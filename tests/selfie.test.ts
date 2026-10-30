@@ -66,16 +66,18 @@ test("decodifica formatos permitidos e libera URLs temporárias em sucesso e err
   assert.equal(revoke.mock.callCount(), 5);
 });
 
-test("cliente não processa sem consentimento", async (t) => {
+test("cliente não processa operação já cancelada nem tenta rede", async (t) => {
   const fetchMock = t.mock.method(globalThis, "fetch", async () => {
     throw new Error("Não deve haver chamadas de rede");
   });
-  await assert.rejects(faceAnalysisProvider.analyze(makeFile(pngHeader), false), /Autorize/);
+  const controller = new AbortController();
+  controller.abort();
+  await assert.rejects(faceAnalysisProvider.analyze(makeFile(pngHeader), controller.signal), { name: "AbortError" });
   assert.equal(fetchMock.mock.callCount(), 0);
 });
 
 test("cliente informa navegador incompatível sem tentar API remota", async () => {
-  await assert.rejects(faceAnalysisProvider.analyze(makeFile(pngHeader), true), /navegador/);
+  await assert.rejects(faceAnalysisProvider.analyze(makeFile(pngHeader)), /navegador/);
 });
 
 test("cliente usa worker local, valida pontos, trata erro e cancela liberando recursos, sem rede", async (t) => {
@@ -114,18 +116,20 @@ test("cliente usa worker local, valida pontos, trata erro e cancela liberando re
       else Reflect.deleteProperty(globalThis, key);
     }
   });
-  const result = await faceAnalysisProvider.analyze(makeFile(pngHeader), true);
+  const result = await faceAnalysisProvider.analyze(makeFile(pngHeader));
   assert.equal(result.report.score, 10);
   const detection = syntheticDetection();
   assert.deepEqual(result.visualization, {
     landmarks: detection.faces[0], width: detection.width, height: detection.height,
   });
+  await assert.rejects(faceAnalysisProvider.analyze(makeFile([1, 2, 3])), /não corresponde/);
+  assert.equal(terminated, 1, "arquivo inválido não deve criar outro worker");
   reply = {};
-  await assert.rejects(faceAnalysisProvider.analyze(makeFile(pngHeader), true), /pontos inválidos/);
+  await assert.rejects(faceAnalysisProvider.analyze(makeFile(pngHeader)), /pontos inválidos/);
   reply = { error: "Modelo local indisponível" };
-  await assert.rejects(faceAnalysisProvider.analyze(makeFile(pngHeader), true), /Modelo local indisponível/);
+  await assert.rejects(faceAnalysisProvider.analyze(makeFile(pngHeader)), /Modelo local indisponível/);
   abortOnPost = new AbortController();
-  await assert.rejects(faceAnalysisProvider.analyze(makeFile(pngHeader), true, abortOnPost.signal), { name: "AbortError" });
+  await assert.rejects(faceAnalysisProvider.analyze(makeFile(pngHeader), abortOnPost.signal), { name: "AbortError" });
   assert.equal(terminated, 4);
   assert.equal(fetchMock.mock.callCount(), 0);
 });

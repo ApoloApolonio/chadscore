@@ -29,29 +29,23 @@ async function mockLocalDetection(page: Page, result: unknown) {
   }, result);
 }
 
-test("consentimento local é obrigatório e reiniciado ao trocar a foto", async ({ page }) => {
+test("só habilita análise com foto válida e permite substituir após erro", async ({ page }) => {
   await mockLocalDetection(page, { error: "Falha de detecção exclusiva de teste." });
   await page.goto("/");
-  const analyze = page.getByRole("button", { name: "Analisar meu rosto" });
-  const consent = page.getByRole("checkbox");
+  const analyze = page.getByRole("button", { name: "Analisar rosto" });
+  await expect(page.getByRole("checkbox")).toHaveCount(0);
   await expect(analyze).toBeDisabled();
   await page.getByLabel("Escolher selfie", { exact: true }).setInputFiles(await syntheticImage());
   await expect(page.getByAltText("Pré-visualização da selfie selecionada")).toBeVisible();
-  await expect(analyze).toBeDisabled();
-  await consent.check();
   await expect(analyze).toBeEnabled();
-  await consent.uncheck();
-  await expect(analyze).toBeDisabled();
-  await consent.check();
+  expect(await page.locator("html").getAttribute("data-test-workers")).toBeNull();
   await page.getByLabel("Trocar selfie", { exact: true }).setInputFiles(await syntheticImage());
-  await expect(consent).not.toBeChecked();
-  await expect(analyze).toBeDisabled();
-  await consent.check();
+  await expect(analyze).toBeEnabled();
   await analyze.click();
   await expect(page.locator("#selfie-error")).toHaveText("Falha de detecção exclusiva de teste.");
-  await page.getByRole("button", { name: "Remover foto" }).click();
+  await page.getByLabel("Trocar selfie", { exact: true }).setInputFiles({ name: "invalid.png", mimeType: "image/png", buffer: Buffer.from("invalid image") });
   await expect(page.getByAltText("Pré-visualização da selfie selecionada")).toHaveCount(0);
-  await expect(consent).not.toBeChecked();
+  await expect(analyze).toBeDisabled();
 });
 
 test("geometria local gera resultados transparentes sem envio nem armazenamento", async ({ page }) => {
@@ -62,14 +56,15 @@ test("geometria local gera resultados transparentes sem envio nem armazenamento"
   });
   await page.goto("/");
   await page.getByLabel("Escolher selfie", { exact: true }).setInputFiles(await syntheticImage());
-  await page.getByRole("checkbox").check();
-  await page.getByRole("button", { name: "Analisar meu rosto" }).click();
+  await page.getByRole("button", { name: "Analisar rosto" }).click();
   await expect(page).toHaveURL(/\/resultados$/);
   for (const name of ["Notas por região facial", "Olhos", "Sobrancelhas", "Nariz", "Lábios", "Mandíbula", "Queixo", "Maçãs do rosto", "Pele", "Cabelo", "Harmonia facial"]) {
     await expect(page.getByRole("heading", { name, exact: true })).toBeVisible();
   }
-  await expect(page.getByText(/não uma medida científica de beleza/)).toBeVisible();
-  await expect(page.getByAltText("Miniatura da selfie analisada")).toHaveAttribute("src", /^blob:/);
+  await expect(page.getByText(/não uma medida científica de beleza/)).toHaveCount(0);
+  await expect(page.getByText(/Geometria da foto, não beleza objetiva/)).toHaveCount(0);
+  await expect(page.locator("#geometry-notice, .essential-note, .result-details")).toHaveCount(0);
+  await expect(page.getByTestId("face-overlay").locator("image")).toHaveAttribute("href", /^blob:/);
   expect(uploads).toEqual([]);
   expect(await page.evaluate(() => ({ local: localStorage.length, session: sessionStorage.length })))
     .toEqual({ local: 0, session: 0 });
@@ -94,8 +89,7 @@ for (const viewport of [360, 1440]) for (const portrait of [true, false]) {
       ? await sharp({ create: { width: 1200, height: 800, channels: 3, background: "#405060" } }).withMetadata({ orientation: 6 }).jpeg().toBuffer()
       : await sharp({ create: { width: 1200, height: 800, channels: 3, background: "#405060" } }).png().toBuffer();
     await page.getByLabel("Escolher selfie", { exact: true }).setInputFiles({ name: portrait ? "oriented.jpg" : "landscape.png", mimeType: portrait ? "image/jpeg" : "image/png", buffer });
-    await page.getByRole("checkbox").check();
-    await page.getByRole("button", { name: "Analisar meu rosto" }).click();
+    await page.getByRole("button", { name: "Analisar rosto" }).click();
     await expect(page).toHaveURL(/\/resultados$/);
     const scores = await page.locator('[data-testid$="score"], [data-testid="psl-classification"]').allTextContents();
     const open = page.getByRole("button", { name: "Visualizar análise facial", exact: true });
@@ -137,7 +131,8 @@ for (const viewport of [360, 1440]) for (const portrait of [true, false]) {
     await page.emulateMedia({ reducedMotion: "reduce" });
     await expect(page.locator("#facial-visualization")).toHaveCSS("animation-name", "none");
     await open.click();
-    await expect(svg).toHaveCount(0);
+    await expect(svg).toBeVisible();
+    await expect(page.locator("#region-controls")).toBeHidden();
     await open.click();
     await expect(svg).toBeVisible();
     await expect(page.locator("html")).toHaveAttribute("data-test-workers", "1");
@@ -158,7 +153,7 @@ test("arquivo inválido não pode ser analisado", async ({ page }) => {
     name: "invalid.png", mimeType: "image/png", buffer: Buffer.from("not a real image"),
   });
   await expect(page.locator("#selfie-error")).toContainText("não corresponde");
-  await expect(page.getByRole("button", { name: "Analisar meu rosto" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Analisar rosto" })).toBeDisabled();
 });
 
 test("MediaPipe real carrega apenas arquivos da mesma origem e rejeita imagem sem rosto", async ({ page }) => {
@@ -166,8 +161,7 @@ test("MediaPipe real carrega apenas arquivos da mesma origem e rejeita imagem se
   page.on("request", (request) => requests.push({ url: request.url(), method: request.method() }));
   await page.goto("/");
   await page.getByLabel("Escolher selfie", { exact: true }).setInputFiles(await syntheticImage());
-  await page.getByRole("checkbox").check();
-  await page.getByRole("button", { name: "Analisar meu rosto" }).click();
+  await page.getByRole("button", { name: "Analisar rosto" }).click();
   await expect(page.locator("#selfie-error")).toContainText("Nenhum rosto detectado", { timeout: 60_000 });
   await expect(page).not.toHaveURL(/\/resultados$/);
   expect(requests.some((request) => request.url.includes("face_landmarker.task"))).toBe(true);
@@ -219,8 +213,7 @@ for (const width of [360, 1440]) {
     await mockLocalDetection(page, detection);
     await page.goto("/");
     await page.getByLabel("Escolher selfie", { exact: true }).setInputFiles(await syntheticImage());
-    await page.getByRole("checkbox").check();
-    await page.getByRole("button", { name: "Analisar meu rosto" }).click();
+    await page.getByRole("button", { name: "Analisar rosto" }).click();
     await expect(page).toHaveURL(/\/resultados$/);
     await expect(page.getByRole("article", { name: "Pele", exact: true })).toContainText(formatScore(report.regions.skin));
     await expect(page.getByRole("article", { name: "Cabelo", exact: true })).toContainText(formatScore(report.regions.hair));
@@ -256,13 +249,13 @@ test("pose sem confiança mostra traços em vez de nota geral e PSL inventados",
   await mockLocalDetection(page, detection);
   await page.goto("/");
   await page.getByLabel("Escolher selfie", { exact: true }).setInputFiles(await syntheticImage());
-  await page.getByRole("checkbox").check();
-  await page.getByRole("button", { name: "Analisar meu rosto" }).click();
+  await page.getByRole("button", { name: "Analisar rosto" }).click();
   await expect(page).toHaveURL(/\/resultados$/);
   for (const name of ["overall-score", "psl-classification", "potential-score"]) {
     await expect(page.getByTestId(name)).toHaveText("—");
   }
   await expect(page.getByTestId("potential-label")).toHaveText("Não estimado");
+  await expect(page.locator(".score-ring-fill, .region-marker")).toHaveCount(0);
 });
 
 test("worker de produção usa máscaras e pixels locais para pele/cabelo; somente detectores são sintéticos", async ({ page, context }) => {
@@ -296,11 +289,10 @@ test("worker de produção usa máscaras e pixels locais para pele/cabelo; somen
   page.on("request", (r) => requests.push({url: r.url(), method: r.method()}));
   await page.goto("/");
   await page.getByLabel("Escolher selfie", { exact: true }).setInputFiles({ name: "synthetic-appearance.png", mimeType: "image/png", buffer: image });
-  await page.getByRole("checkbox").check();
-  await page.getByRole("button", { name: "Analisar meu rosto" }).click();
+  await page.getByRole("button", { name: "Analisar rosto" }).click();
   await expect(page).toHaveURL(/\/resultados$/);
-  await expect(page.getByRole("article", { name: "Pele", exact: true }).locator("p")).toHaveText(/^\d{1,2},\d$/);
-  await expect(page.getByRole("article", { name: "Cabelo", exact: true }).locator("p")).toHaveText(/^\d{1,2},\d$/);
+  await expect(page.getByRole("article", { name: "Pele", exact: true }).locator(".region-label > span")).toHaveText(/^\d{1,2},\d$/);
+  await expect(page.getByRole("article", { name: "Cabelo", exact: true }).locator(".region-label > span")).toHaveText(/^\d{1,2},\d$/);
   expect(requests.some((r) => r.url.includes("appearance-analysis.mjs"))).toBe(true);
   expect(requests.filter((r) => !r.url.startsWith("blob:") && (r.method !== "GET" || new URL(r.url).origin !== "http://127.0.0.1:3100"))).toEqual([]);
 });
@@ -363,20 +355,29 @@ for (const width of [360, 1440]) {
     await mockLocalDetection(page, detection);
     await page.goto("/");
     await page.getByLabel("Escolher selfie", { exact: true }).setInputFiles(await syntheticImage());
-    await page.getByRole("checkbox").check();
-    await page.getByRole("button", { name: "Analisar meu rosto" }).click();
+    await page.getByRole("button", { name: "Analisar rosto" }).click();
     await expect(page).toHaveURL(/\/resultados$/);
-    const thumbnail = page.getByAltText("Miniatura da selfie analisada");
+    const thumbnail = page.getByTestId("face-overlay");
     await expect(thumbnail).toBeVisible();
-    const photoUrl = await thumbnail.getAttribute("src");
+    const photoUrl = await thumbnail.locator("image").getAttribute("href");
     expect(photoUrl).toMatch(/^blob:/);
     await expect(page.getByTestId("overall-score")).toHaveText(formatScore(report.score));
     await expect(page.getByTestId("overall-score")).toHaveText(/^\d{1,2},\d$/);
     await expect(page.getByTestId("psl-classification")).toHaveText(classifyPSL(report.score));
     await expect(page.getByTestId("potential-score")).toHaveText("—");
+    const classification = page.getByTestId("psl-classification");
+    await expect(page.getByText("SEU PSL", { exact: true })).toBeVisible();
+    await expect(classification).toHaveCSS("font-size", width < 640 ? "34px" : "42px");
+    await expect(classification).toHaveCSS("color", "rgb(140, 203, 255)");
+    await expect(page.locator(".psl-line")).toHaveCSS("text-align", "center");
+    const scoresBox = (await page.locator(".score-pair").boundingBox())!;
+    const classificationBox = (await classification.boundingBox())!;
+    expect(classificationBox.y).toBeGreaterThan(scoresBox.y + scoresBox.height);
+    expect(classificationBox.x + classificationBox.width / 2).toBeCloseTo(scoresBox.x + scoresBox.width / 2, 0);
     await expect(page.getByTestId("potential-label")).toHaveText("Não estimado");
-    await expect(page.getByRole("meter")).toHaveCount(0);
-    await expect(page.locator("svg")).toHaveCount(0);
+    await expect(page.locator(".score-ring[role=meter]")).toHaveCount(1);
+    await expect(page.locator(".score-ring-fill")).toHaveCount(1);
+    await expect(page.locator(".portrait-frame")).toHaveCSS("border-radius", "50%");
     await expect(page.getByRole("heading", { name: "Como a pontuação é calculada" })).toHaveCount(0);
     await expect(page.getByRole("article")).toHaveCount(10);
     for (const name of ["Pele", "Cabelo"]) {
@@ -389,7 +390,7 @@ for (const width of [360, 1440]) {
     await page.getByRole("button", { name: "Nova análise", exact: true }).click();
     await expect(page).toHaveURL("/");
     expect(await page.evaluate(() => (window as unknown as { revokedBlobUrls: string[] }).revokedBlobUrls)).toContain(photoUrl);
-    await expect(page.getByRole("button", { name: "Analisar meu rosto" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Analisar rosto" })).toBeDisabled();
     await expect(page.getByAltText("Pré-visualização da selfie selecionada")).toHaveCount(0);
   });
 }
@@ -412,8 +413,7 @@ for (const width of [360, 1440]) {
     });
     await page.goto("/");
     await page.getByLabel("Escolher selfie", { exact: true }).setInputFiles(await syntheticImage());
-    await page.getByRole("checkbox").check();
-    await page.getByRole("button", { name: "Analisar meu rosto" }).click();
+    await page.getByRole("button", { name: "Analisar rosto" }).click();
     await expect(page).toHaveURL(/\/resultados$/);
     await expect(page.getByTestId("potential-score")).toHaveText(formatScore(report.potential));
     await expect(page.getByTestId("potential-score")).toHaveText(/^\d{1,2},\d$/);
@@ -421,7 +421,12 @@ for (const width of [360, 1440]) {
     await expect(page.getByTestId("psl-classification")).toHaveText(classifyPSL(report.score));
     await expect(page.getByTestId("overall-score")).toHaveText(formatScore(report.score));
     await expect(page.locator("#potential-note")).toContainText("não garante melhoria");
-    await expect(page.getByRole("meter")).toHaveCount(0);
+    await expect(page.locator(".score-ring[role=meter]")).toHaveCount(2);
+    for (const [label, value] of [["ATUAL", report.score!], ["POTENCIAL", report.potential!]] as const) {
+      const ring = page.getByRole("meter", { name: `${label}: ${formatScore(value)}`, exact: true });
+      await expect(ring).toHaveAttribute("aria-valuenow", String(value));
+      await expect(ring.locator(".score-ring-fill")).toHaveAttribute("stroke-dasharray", `${value * 10} 100`);
+    }
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     expect(uploads).toEqual([]);
   });
@@ -446,8 +451,7 @@ test("worker real calcula luz dos pixels locais; detector substituído apenas ne
   page.on("request", (request) => requests.push({ url: request.url(), method: request.method() }));
   await page.goto("/");
   await page.getByLabel("Escolher selfie", { exact: true }).setInputFiles(await syntheticImage());
-  await page.getByRole("checkbox").check();
-  await page.getByRole("button", { name: "Analisar meu rosto" }).click();
+  await page.getByRole("button", { name: "Analisar rosto" }).click();
   await expect(page).toHaveURL(/\/resultados$/);
   await expect(page.getByTestId("potential-score")).toHaveText(/^\d{1,2},\d$/);
   expect(requests.some((r) => r.url.includes("capture-light.mjs"))).toBe(true);
@@ -456,7 +460,7 @@ test("worker real calcula luz dos pixels locais; detector substituído apenas ne
 });
 
 for (const width of [360, 1440]) {
-  test(`tema azul e cards glass em ${width}px preservam fluxo local e pele com confiança moderada`, async ({ page }) => {
+  test(`tema preto e indicadores reais em ${width}px preservam fluxo local e pele com confiança moderada`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });
     await page.emulateMedia({ reducedMotion: "reduce" });
     const fixture = syntheticAppearance();
@@ -471,24 +475,50 @@ for (const width of [360, 1440]) {
       if (["POST", "PUT", "PATCH"].includes(request.method())) uploads.push(request.url());
     });
     await page.goto("/");
-    await expect(page.getByRole("heading", { level: 1, name: "ChadScore" })).toBeVisible();
-    await expect(page.locator("main")).toHaveCSS("background-color", "rgb(7, 12, 22)");
-    await expect(page.locator("#selfie-panel .glass-card")).toHaveCSS("backdrop-filter", "blur(16px)");
-    await expect(page.getByRole("link", { name: "Escolher minha selfie" })).toHaveAttribute("href", "#selfie-panel");
+    await expect(page.getByRole("heading", { level: 1, name: "ChadScore." })).toBeVisible();
+    await expect(page.locator("main")).toHaveCSS("background-color", "rgb(5, 5, 5)");
+    await expect(page.locator("#selfie-panel .glass-card")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Tirar foto", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Selecionar foto", exact: true })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await page.getByLabel("Escolher selfie", { exact: true }).setInputFiles(await syntheticImage());
-    await page.getByRole("checkbox").check();
-    await page.getByRole("button", { name: "Analisar meu rosto" }).click();
+    await page.getByRole("button", { name: "Analisar rosto" }).click();
     await expect(page).toHaveURL(/\/resultados$/);
-    await expect(page.locator(".glass-card")).toHaveCount(13);
+    await expect(page.locator(".glass-card")).toHaveCount(0);
+    await expect(page.locator(".result-bubble")).toHaveCount(5);
+    for (const block of await page.locator(".result-bubble").all()) {
+      await expect(block).toHaveCSS("border-radius", "28px");
+      await expect(block).toHaveCSS("backdrop-filter", "blur(12px)");
+      await expect(block).toHaveCSS("background-image", /gradient/);
+      await expect(block).toHaveCSS("background-color", "rgb(17, 18, 22)");
+      await expect(block).not.toHaveCSS("box-shadow", "none");
+    }
+    await expect(page.getByRole("button", { name: "Nova análise", exact: true })).toHaveClass(/new-analysis-button/);
+    await expect(page.locator(".result-details, .essential-note, #geometry-notice")).toHaveCount(0);
     await expect(page.getByRole("article", { name: "Pele", exact: true })).toContainText(formatScore(expected.regions.skin));
     await expect(page.getByTestId("overall-score")).toHaveText(formatScore(expected.score));
     await expect(page.getByTestId("psl-classification")).toHaveText(classifyPSL(expected.score));
-    await expect(page.getByTestId("overall-score")).toHaveClass(/text-blue-300/);
-    for (const card of await page.locator(".glass-card").all()) {
-      await expect(card).toHaveCSS("border-radius", "24px");
-      await expect(card).toHaveCSS("backdrop-filter", "blur(16px)");
-      await expect(card).toHaveCSS("background-image", /gradient/);
+    await expect(page.locator("main")).toHaveCSS("background-color", "rgb(5, 5, 5)");
+    await expect(page.locator('[data-region="eyes"]')).toHaveAttribute("stroke", "#8CCBFF");
+    for (const ring of await page.locator(".score-ring svg").all()) {
+      expect(await ring.locator("stop").evaluateAll((stops) => stops.map((stop) => stop.getAttribute("stop-color"))))
+        .toEqual(["#CDD8E7", "#EDF5FF", "#8CCBFF"]);
+    }
+    await expect(page.locator(".score-ring-fill").first()).toHaveCSS("animation-name", "none");
+    const grid = await page.locator(".region-grid").evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(" ").length);
+    expect(grid).toBe(2);
+    for (const [key, name] of [["eyes", "Olhos"], ["eyebrows", "Sobrancelhas"], ["nose", "Nariz"], ["lips", "Lábios"], ["jawline", "Mandíbula"], ["chin", "Queixo"], ["cheekbones", "Maçãs do rosto"], ["skin", "Pele"], ["hair", "Cabelo"], ["harmony", "Harmonia facial"]] as const) {
+      const item = page.getByRole("article", { name, exact: true });
+      const value = expected.regions[key];
+      await expect(item.locator("h3")).toHaveCSS("text-transform", "uppercase");
+      if (value === null) {
+        await expect(item.locator(".region-marker")).toHaveCount(0);
+      } else {
+        await expect(item.getByRole("meter")).toHaveAttribute("aria-valuenow", String(value));
+        await expect(item.locator(".region-progress")).toHaveAttribute("style", `width: ${value * 10}%;`);
+        await expect(item.locator(".region-marker")).toHaveCount(1);
+        await expect(item.locator(".region-progress")).toHaveCSS("animation-name", "none");
+      }
     }
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     expect(uploads).toEqual([]);

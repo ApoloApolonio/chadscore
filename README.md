@@ -1,6 +1,6 @@
 # ChadScore
 
-Next.js, TypeScript, Tailwind CSS e **MediaPipe local e gratuito**. Interface azul/glass minimalista, com Manrope via `next/font`. Sem conta, chave, backend de upload ou API paga para analisar selfies.
+Next.js, TypeScript, Tailwind CSS e **MediaPipe local e gratuito**. Interface minimalista #050505, cards grafite #111216, tipografia Manrope via `next/font`, bordas prateadas, reflexos branco frio e acentos azul-gelo #8CCBFF. Sem conta, chave, backend de upload ou API paga para analisar selfies.
 
 ## Executar e validar
 
@@ -39,8 +39,37 @@ Os URLs oficiais/versionados estão em `scripts/prepare-models.mjs`. Os assets g
 
 ## Captura e privacidade
 
+A página inicial contém logo e seletor FaceScan/MogBattle. No FaceScan, permanecem a ilustração SVG autoral, **Tirar foto**, **Selecionar foto** e **Analisar rosto**. Os dois botões de captura ficam sempre visíveis, lado a lado. A prévia circular substitui a ilustração; os mesmos botões permitem trocar a imagem. Animações respeitam movimento reduzido. O FaceScan não tem checkbox nem validação de idade. **Analisar rosto** habilita com uma imagem válida e só inicia a inferência ao ser acionado. A prévia não exibe landmarks inventados antes da inferência. Apenas erros operacionais são mostrados quando necessário; os estados de validação/análise são anunciados de forma acessível.
+
+Rosto/prévia e controles ficam em exatamente dois cards #111216 com glass discreto, separados por 18 px. Eles compartilham a largura máxima de 576 px e o raio de 28 px dos resultados. O logo fica próximo ao primeiro card; não há centralização vertical que crie um grande espaço vazio acima dele. O botão de análise válido usa gradiente branco frio/azul-gelo; desabilitado, permanece escuro.
+
+A ilustração inicial é um wireframe masculino autoral, angular e simétrico, com mandíbula larga e quadrada, queixo forte, maçãs marcadas, sobrancelhas baixas, nariz reto e pescoço largo. Usa somente SVG transparente, linhas e pontos azul-gelo/brancos. É decorativa, não define um padrão de beleza e não é importada pelo detector ou pela calibração. Não altera os pontos da selfie nem as notas reais.
+
+Os avisos essenciais estão na página separada **`/privacidade`**. O FaceScan não registra um aceite fictício nem envia um parâmetro de consentimento automático ao provider.
+
+## FaceScan e MogBattle local
+
+O seletor abaixo do logo alterna entre **FaceScan** (análise individual preservada) e **MogBattle** (duas pessoas), sem mudar fórmulas, escala, arredondamento ou faixas PSL. Trocar de modo desmonta o fluxo anterior, cancela workers ativos e descarta suas fotos. Atualizar a página também descarta a batalha.
+
+No MogBattle, cada participante tem nome opcional, câmera com permissão nativa, galeria, prévia circular, troca e remoção. A autorização explícita para usar as duas fotos é obrigatória e é limpa ao trocar/remover imagens. Nomes e selfies nunca são enviados ou persistidos. Sem nome, usa Participante 1/2. O app não consegue verificar tecnicamente a titularidade ou a autorização declarada.
+
+- `src/lib/battle-analysis.ts` é a orquestração local sobre o mesmo `faceAnalysisProvider`. As duas inferências são sequenciais para evitar dois runtimes WASM simultâneos no celular. Cache por identidade do `File`, restrito à batalha em memória, evita refazer um sucesso após a falha da outra foto. Cancelamento não coloca respostas atrasadas no cache. Arquivos removidos são excluídos do cache; encerrar reinicia o cache completo.
+- `src/lib/mogbattle.ts` compara os **mesmos décimos arredondados** que o FaceScan exibe. A diferença é calculada em inteiros de décimos para evitar resíduos de ponto flutuante. Nota maior vence; igualdade dá empate. Erro ou nota geral indisponível nunca declara vencedor.
+- `FaceLandmarkPortrait` compartilha o mesmo SVG/transformação de imagem e pontos nos dois modos. Os pontos são os já detectados, sem outra inferência. O perdedor recebe apenas `filter: grayscale(1)` na imagem renderizada e selo visual MOGGADO; o arquivo original não muda. O vencedor tem uma borda discreta, sem coroa. Empates mantêm ambos coloridos e sem selo.
+- A comparação detalhada contém geral, as dez regiões e as medições numéricas já presentes no relatório. Notas disponíveis recebem destaque azul-gelo quando maiores; igualdade indica empate e ausência mostra `—`. Simetria é o **erro RMS já calculado**, identificado como tal, não uma nova nota inventada. Erros geométricos e razões são **descritivos, sem vencedor**, pois maior não significa melhor. Medições de métodos/unidades diferentes não são confundidas.
+- **Batalhar novamente**, remover/trocar foto, sair do modo ou desmontar a página revoga URLs temporárias e descarta o estado correspondente. Câmeras e workers são encerrados. Não há garantia de apagamento criptográfico imediato da memória gerenciada.
+- Os resultados são pontuações estéticas subjetivas desta captura, sem validade científica como medição de beleza ou valor pessoal. Pose, luz e erros de detecção podem alterar comparações.
+
+O fundo global usa gradientes quase pretos, grid estático de baixa opacidade, vinheta e uma pequena textura SVG repetida (`public/grain.svg`). Sem filtros de ruído animados, imagens externas, verde ou computação por quadro. Os cards preservam grafite, prata e azul-gelo; `prefers-reduced-motion` desativa as animações de interface.
+
+### Planejado: MogBattle Live (não implementado)
+
+Ideia futura: contas, amigos, convites, batalhas online em tempo real, câmera própria de cada participante, escaneamento simultâneo e resultado quando ambas as análises terminarem. A comparação pura, o provider e a orquestração foram separados da interface para permitir reutilização futura. **Esta versão não cria contas, servidores, transporte de imagens, streaming, WebRTC, serviços pagos ou conexões de batalha remotas.** Uma versão Live exigiria outro projeto de consentimento, segurança, autenticação e privacidade, sem reutilizar implicitamente a autorização local.
+
+A câmera usa `getUserMedia` somente após uma ação explícita, com permissão do navegador e sem áudio. A captura é convertida em JPEG local, sem espelhamento e com lado máximo de 1280 px, e exige confirmação. Fechar (inclusive Escape), capturar ou sair do componente para todos os tracks; permissões resolvidas após fechar também são descartadas. Refazer solicita a câmera novamente. Sem câmera, sem suporte ou sem permissão, a seleção de arquivo/galeria permanece disponível. A câmera requer HTTPS ou localhost. Os testes de câmera usam streams sintéticos em memória; não acessam uma câmera física.
+
 - Aceita JPG, PNG e WebP até 5 MB e 16 megapixels. Valida tipo, assinatura e decodificação local.
-- O usuário declara ser titular da selfie, ter 18 anos ou mais e entender que as notas são subjetivas. O aceite é limpo ao trocar/remover a foto.
+- A escolha/captura e o início da análise são ações explícitas e distintas; nenhuma inferência começa só por escolher a foto. Não há confirmação ou checagem de idade.
 - Um worker recebe o arquivo por structured clone **dentro do navegador**, nunca por HTTP. A inferência usa CPU/WASM, não uma função serverless. Não há câmera automática, analytics ou service worker.
 - O Face Landmarker procura até dois rostos; zero/múltiplos, pontos inválidos, rosto pequeno ou enquadramento inadequado geram erro sem resultado fabricado.
 - Pele/Cabelo usam Image Segmenter e pixels locais. Máscaras, pixels e coordenadas completas não entram no relatório. Falha/insuficiência de uma região produz `—`, não uma nota de substituição.
@@ -52,7 +81,11 @@ Os URLs oficiais/versionados estão em `scripts/prepare-models.mjs`. Os assets g
 
 ### Visualização facial local
 
-Nos resultados, **Visualizar análise facial** abre um card com a selfie original, pontos azuis e contornos oficiais do MediaPipe para olhos, sobrancelhas, nariz, lábios, mandíbula e contorno facial. É possível selecionar uma região e ativar/desativar a sobreposição. Imagem e pontos compartilham um único `viewBox` SVG, sem recorte ou espelhamento, respeitando a orientação EXIF e a escala proporcional usada no worker. Pontos fora da imagem não são deslocados nem conectados. Animações respeitam a preferência de movimento reduzido.
+Nos resultados, a selfie circular central já exibe os landmarks reais, com pontos azul-gelo/branco frio e contornos oficiais do MediaPipe para olhos, sobrancelhas, nariz, lábios, mandíbula e contorno facial. **Visualizar análise facial** expande os controles de região; o controle de visibilidade permanece sempre disponível. Imagem e pontos compartilham um único `viewBox` SVG e o mesmo recorte circular (`xMidYMid slice`), sem espelhamento, respeitando a orientação EXIF e a escala proporcional usada no worker. Pontos fora da imagem não são deslocados nem conectados.
+
+Os círculos ATUAL/POTENCIAL representam exclusivamente os valores existentes, com arcos proporcionais de 0 a 10 e texto com vírgula. As dez regiões ficam sempre em duas colunas, com barras graduais e marcador proporcional. Valores indisponíveis exibem `—`, sem arco, marcador ou valor acessível fabricado. Círculos e barras têm preenchimento suave e sem animação em `prefers-reduced-motion`. As fórmulas não mudam.
+
+Os resultados agrupam foto, indicadores, PSL, regiões e a ação de nova análise em superfícies escuras arredondadas, com contorno, glass e glow discretos. Não há observações explicativas visíveis entre esses blocos; os avisos gerais permanecem em `/privacidade`. A descrição técnica de Potencial é associada ao indicador para leitores de tela, sem ocupar espaço visual.
 
 A topologia estática em `src/lib/face-overlay.ts` deriva do MediaPipe (Apache-2.0); não carrega outro detector. A visualização funciona mesmo quando a nota se abstém por pose e não modifica notas, PSL, Potencial ou calibração. Os pontos representam geometria da foto, não beleza objetiva.
 

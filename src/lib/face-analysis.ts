@@ -4,12 +4,11 @@ import { calculateFaceReport } from "./face-geometry";
 import { validateSelfieFile } from "./selfie";
 
 export interface FaceAnalysisProvider {
-  analyze(file: File, consent: boolean, signal?: AbortSignal): Promise<FaceAnalysisResponse>;
+  analyze(file: File, signal?: AbortSignal): Promise<FaceAnalysisResponse>;
 }
 
 export const faceAnalysisProvider: FaceAnalysisProvider = {
-  async analyze(file, consent, signal) {
-    if (!consent) throw new Error("Autorize o processamento local da selfie antes de continuar.");
+  async analyze(file, signal) {
     if (signal?.aborted) throw new DOMException("Cancelado", "AbortError");
     if (typeof Worker === "undefined" || typeof createImageBitmap === "undefined" || typeof OffscreenCanvas === "undefined") {
       throw new Error("Este navegador não oferece os recursos de análise local. Use uma versão atual do Chrome, Edge, Firefox ou Safari compatível com WebAssembly, Worker e OffscreenCanvas.");
