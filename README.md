@@ -41,7 +41,7 @@ Os URLs oficiais/versionados estão em `scripts/prepare-models.mjs`. Os assets g
 
 ## Ícone oficial
 
-O ícone do ChadScore é o retrato do rosto em círculo azul sobre fundo preto. A fonte versionada é `assets/chadscore-icon.png` (1254×1254, SHA-256 `04fbb5712808764a718820feae5386c8f73cbf801ab867e56c6da6ecf16b7595`). `npm run prepare:icons` gera `public/icons/icon-{16,32,48,180,512}.png` com recorte centralizado e `public/favicon.ico` com frames PNG 16/32/48. Os metadados do App Router em `src/lib/site-icons.ts` declaram ícone de aba, atalho e apple-touch-icon; a ilustração SVG interativa da página inicial não é usada como ícone.
+O ícone do ChadScore é o retrato em círculo azul sobre fundo transparente. A fonte versionada é `assets/chadscore-icon.png` (1254×1254, SHA-256 `0a9d1ec27a19de3720bf4a35bd2e0ca99b7c946c8da315d73e34177b3c82ab5e`). `npm run prepare:icons` gera `public/icons/icon-{16,32,48,180,512}.png` preservando o alfa fora do círculo e `public/favicon.ico` com frames PNG 16/32/48. Os metadados do App Router em `src/lib/site-icons.ts` declaram ícone de aba, atalho e apple-touch-icon com `?v=2` para invalidar o cache do ícone anterior; a ilustração SVG interativa da página inicial não é usada como ícone.
 
 ## Captura e privacidade
 

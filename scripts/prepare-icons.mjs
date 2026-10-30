@@ -11,8 +11,8 @@ const rendered = new Map();
 for (const size of sizes) {
   const { data, info } = await sharp(await readFile(source))
     .rotate()
+    .ensureAlpha()
     .resize(size, size, { fit: "cover", position: "centre", kernel: "lanczos3" })
-    .removeAlpha()
     .png({ compressionLevel: 9, adaptiveFiltering: true, palette: false })
     .toBuffer({ resolveWithObject: true });
   if (info.width !== size || info.height !== size) {
