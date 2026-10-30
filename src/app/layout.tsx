@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
+import { AnalysisSessionProvider } from "@/components/analysis-session";
 import "./globals.css";
 
 export const metadata: Metadata = {
   title: "ChadScore",
-  description: "ChadScore — uma nova perspectiva sobre você. Em breve.",
+  description: "ChadScore — indicadores faciais 2D gratuitos com MediaPipe, processados apenas no seu navegador.",
 };
 
 export default function RootLayout({
@@ -11,7 +12,9 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="pt-BR">
-      <body className="antialiased">{children}</body>
+      <body className="antialiased">
+        <AnalysisSessionProvider>{children}</AnalysisSessionProvider>
+      </body>
     </html>
   );
 }

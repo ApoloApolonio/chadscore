@@ -1,20 +1,62 @@
-export type FaceAnalysisResponse = {
-  status: "unavailable";
-  message: string;
-};
+import { LandmarkResultSchema, SuccessResponseSchema } from "./analysis-schema";
+import type { FaceAnalysisResponse } from "./analysis-schema";
+import { calculateFaceReport } from "./face-geometry";
+import { validateSelfieFile } from "./selfie";
 
-/** Ponto de integração futura. Um provedor real deverá receber o arquivo validado. */
 export interface FaceAnalysisProvider {
-  analyze(file: File): Promise<FaceAnalysisResponse>;
+  analyze(file: File, consent: boolean, signal?: AbortSignal): Promise<FaceAnalysisResponse>;
 }
 
-/** Sem backend: não envia, persiste ou analisa a foto e não fabrica resultados. */
 export const faceAnalysisProvider: FaceAnalysisProvider = {
-  async analyze() {
-    return {
-      status: "unavailable",
-      message:
-        "A IA ainda não está conectada. Nenhuma análise foi realizada e sua foto não foi enviada.",
-    };
+  async analyze(file, consent, signal) {
+    if (!consent) throw new Error("Autorize o processamento local da selfie antes de continuar.");
+    if (signal?.aborted) throw new DOMException("Cancelado", "AbortError");
+    if (typeof Worker === "undefined" || typeof createImageBitmap === "undefined" || typeof OffscreenCanvas === "undefined") {
+      throw new Error("Este navegador não oferece os recursos de análise local. Use uma versão atual do Chrome, Edge, Firefox ou Safari compatível com WebAssembly, Worker e OffscreenCanvas.");
+    }
+    await validateSelfieFile(file);
+    if (signal?.aborted) throw new DOMException("Cancelado", "AbortError");
+    const report = await new Promise<FaceAnalysisResponse>((resolve, reject) => {
+      const worker = new Worker("/face-landmarker.worker.js");
+      const cleanup = () => {
+        clearTimeout(timer);
+        signal?.removeEventListener("abort", abort);
+        worker.terminate();
+      };
+      const abort = () => {
+        cleanup();
+        reject(new DOMException("Cancelado", "AbortError"));
+      };
+      const timer = setTimeout(() => {
+        cleanup();
+        reject(new Error("O processamento local demorou demais. Tente uma foto menor ou outro navegador."));
+      }, 60_000);
+      signal?.addEventListener("abort", abort, { once: true });
+      worker.onerror = () => {
+        cleanup();
+        reject(new Error("Não foi possível carregar a análise local. Execute npm run prepare:models e tente novamente."));
+      };
+      worker.onmessage = ({ data }: MessageEvent<unknown>) => {
+        cleanup();
+        try {
+          if (data && typeof data === "object" && "error" in data && typeof data.error === "string") {
+            throw new Error(data.error);
+          }
+          const detection = LandmarkResultSchema.safeParse(data);
+          if (!detection.success) throw new Error("O detector retornou pontos inválidos. Tente outra foto.");
+          resolve(SuccessResponseSchema.parse({ status: "completed", report: calculateFaceReport(detection.data) }));
+        } catch (error) {
+          reject(error);
+        }
+      };
+      try {
+        // Structured clone para outro contexto do MESMO navegador, nunca HTTP.
+        worker.postMessage({ file });
+      } catch {
+        cleanup();
+        reject(new Error("Não foi possível processar este arquivo localmente."));
+      }
+    });
+    return report;
   },
 };

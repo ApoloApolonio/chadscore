@@ -24,3 +24,7 @@ credentials.json
 coverage/
 Thumbs.db
 Desktop.ini
+playwright-report/
+test-results/
+# Arquivos públicos do MediaPipe preparados por npm run prepare:models
+public/mediapipe/

@@ -32,12 +32,15 @@ export async function validateSelfieFile(file: File): Promise<void> {
   try {
     const image = new Image();
     image.src = url;
-    await image.decode();
+    await image.decode().catch(() => {
+      throw new Error("Não foi possível ler essa imagem. Escolha outra selfie.");
+    });
     if (!image.naturalWidth || !image.naturalHeight) {
-      throw new Error("Invalid image dimensions");
+      throw new Error("Não foi possível ler essa imagem. Escolha outra selfie.");
     }
-  } catch {
-    throw new Error("Não foi possível ler essa imagem. Escolha outra selfie.");
+    if (image.naturalWidth * image.naturalHeight > 16_000_000) {
+      throw new Error("Use uma imagem de até 16 megapixels para o processamento local.");
+    }
   } finally {
     URL.revokeObjectURL(url);
   }

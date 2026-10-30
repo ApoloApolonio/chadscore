@@ -2,6 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
+import { useRouter } from "next/navigation";
+import { useAnalysisSession } from "./analysis-session";
+import { ESTIMATE_NOTICE } from "@/lib/analysis-schema";
 import { faceAnalysisProvider } from "@/lib/face-analysis";
 import { SELFIE_ACCEPT, validateSelfieFile } from "@/lib/selfie";
 
@@ -12,13 +15,17 @@ export function SelfieUpload() {
   const [isValidating, setIsValidating] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
+  const [consent, setConsent] = useState(false);
+  const router = useRouter();
+  const { setReport } = useAnalysisSession();
+  const abortRef = useRef<AbortController | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const operation = useRef(0);
 
   useEffect(() => {
     return () => {
       operation.current += 1;
+      abortRef.current?.abort();
     };
   }, []);
 
@@ -37,7 +44,8 @@ export function SelfieUpload() {
     const currentOperation = ++operation.current;
     setSelection(null);
     setError("");
-    setMessage("");
+    setConsent(false);
+    setReport(null);
     setIsValidating(true);
     setIsAnalyzing(false);
 
@@ -57,9 +65,10 @@ export function SelfieUpload() {
 
   function removeSelfie() {
     operation.current += 1;
+    abortRef.current?.abort();
     setSelection(null);
     setError("");
-    setMessage("");
+    setConsent(false);
     setIsValidating(false);
     setIsAnalyzing(false);
     if (inputRef.current) inputRef.current.value = "";
@@ -68,18 +77,29 @@ export function SelfieUpload() {
 
   async function handleAnalyze(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!selection || isValidating || isAnalyzing) return;
+    if (!selection || !consent || isValidating || isAnalyzing) return;
 
     const currentOperation = ++operation.current;
     setIsAnalyzing(true);
     setError("");
-    setMessage("");
+    setReport(null);
+    const controller = new AbortController();
+    abortRef.current = controller;
     try {
-      const result = await faceAnalysisProvider.analyze(selection.file);
-      if (currentOperation === operation.current) setMessage(result.message);
-    } catch {
+      const result = await faceAnalysisProvider.analyze(selection.file, consent, controller.signal);
       if (currentOperation === operation.current) {
-        setError("Não foi possível iniciar a análise. Tente novamente.");
+        setReport(result.report);
+        setSelection(null);
+        setConsent(false);
+        router.push("/resultados");
+      }
+    } catch (cause) {
+      if (currentOperation === operation.current) {
+        setError(cause instanceof Error && cause.name === "TimeoutError"
+          ? "A análise demorou demais. Tente novamente."
+          : cause instanceof Error && cause.name !== "AbortError"
+            ? cause.message
+            : "A análise foi cancelada.");
       }
     } finally {
       if (currentOperation === operation.current) setIsAnalyzing(false);
@@ -135,16 +155,35 @@ export function SelfieUpload() {
         <p id="selfie-error" role="alert" className="mt-3 text-sm text-red-300">
           {error}
         </p>
+        <p className="mt-3 text-left text-xs leading-relaxed text-zinc-400">
+          {ESTIMATE_NOTICE}
+        </p>
+        <label className="mt-5 flex items-start gap-3 text-left text-xs leading-relaxed text-zinc-300">
+          <input
+            type="checkbox"
+            checked={consent}
+            onChange={(event) => setConsent(event.target.checked)}
+            disabled={!selection || isAnalyzing}
+            required
+            aria-describedby="selfie-privacy"
+            className="mt-0.5 size-4 shrink-0 accent-lime-300 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-lime-300"
+          />
+          <span>
+            Tenho 18 anos ou mais, esta selfie é minha e concordo com o
+            processamento somente neste navegador. Entendo que os indicadores e a
+            nota são limitados e não medem beleza científica.
+          </span>
+        </label>
         <button
           type="submit"
-          disabled={!selection || isValidating || isAnalyzing}
+          disabled={!selection || !consent || isValidating || isAnalyzing}
           aria-describedby="analysis-status"
           className="mt-3 w-full rounded-xl bg-lime-300 px-7 py-4 text-sm font-semibold text-zinc-950 transition-colors enabled:cursor-pointer enabled:hover:bg-lime-200 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-lime-300 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {isValidating
             ? "Validando imagem…"
             : isAnalyzing
-              ? "Iniciando análise…"
+              ? "Analisando localmente…"
               : "Analisar meu rosto"}
         </button>
         <p
@@ -155,14 +194,16 @@ export function SelfieUpload() {
           {isValidating
             ? "Verificando se a imagem pode ser aberta…"
             : isAnalyzing
-              ? "Verificando a disponibilidade da análise…"
-              : message || "IA ainda não conectada. Nenhuma nota será gerada nesta etapa."}
+              ? "Carregando o modelo local e detectando pontos faciais. Isso pode levar alguns segundos…"
+              : "Grátis e local: nenhuma foto é enviada. Clique para iniciar o MediaPipe."}
         </p>
       </div>
       <p id="selfie-privacy" className="mt-4 text-xs leading-relaxed text-zinc-500">
-        Sua foto fica apenas na memória deste navegador enquanto esta página está
-        aberta. Não é enviada nem salva pelo ChadScore. Remova a foto ou feche a
-        página para descartá-la.
+        Sua foto e os pontos faciais ficam somente na memória deste navegador,
+        sem envio a servidores ou armazenamento. O navegador baixa apenas os
+        arquivos estáticos do modelo na mesma origem do site. Remover a foto
+        interrompe o processamento. O relatório também fica apenas na memória
+        desta aba e é descartado ao atualizar ou fechar a página.
       </p>
     </form>
   );

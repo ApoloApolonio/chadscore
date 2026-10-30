@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { MAX_SELFIE_BYTES, validateSelfieFile } from "../src/lib/selfie";
 import { faceAnalysisProvider } from "../src/lib/face-analysis";
+import { syntheticDetection } from "./fixtures/landmarks";
 
 const pngHeader = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 
@@ -65,13 +66,62 @@ test("decodifica formatos permitidos e libera URLs temporárias em sucesso e err
   assert.equal(revoke.mock.callCount(), 5);
 });
 
-test("adaptador informa indisponibilidade sem rede ou resultados fictícios", async (t) => {
+test("cliente não processa sem consentimento", async (t) => {
   const fetchMock = t.mock.method(globalThis, "fetch", async () => {
     throw new Error("Não deve haver chamadas de rede");
   });
-  const result = await faceAnalysisProvider.analyze(makeFile(pngHeader));
-  assert.equal(result.status, "unavailable");
-  assert.match(result.message, /não foi enviada/);
-  assert.deepEqual(Object.keys(result).sort(), ["message", "status"]);
+  await assert.rejects(faceAnalysisProvider.analyze(makeFile(pngHeader), false), /Autorize/);
+  assert.equal(fetchMock.mock.callCount(), 0);
+});
+
+test("cliente informa navegador incompatível sem tentar API remota", async () => {
+  await assert.rejects(faceAnalysisProvider.analyze(makeFile(pngHeader), true), /navegador/);
+});
+
+test("cliente usa worker local, valida pontos, trata erro e cancela liberando recursos, sem rede", async (t) => {
+  const fetchMock = t.mock.method(globalThis, "fetch", async () => {
+    assert.fail("Nenhuma foto pode sair via fetch");
+  });
+  const originals = new Map<string, PropertyDescriptor | undefined>();
+  let reply: unknown = syntheticDetection();
+  let abortOnPost: AbortController | null = null;
+  let terminated = 0;
+  class FakeWorker {
+    onmessage?: (event: { data: unknown }) => void;
+    constructor(url: string) { assert.equal(url, "/face-landmarker.worker.js"); }
+    postMessage(data: { file: File }) {
+      assert.ok(data.file instanceof File);
+      if (abortOnPost) abortOnPost.abort();
+      else queueMicrotask(() => this.onmessage?.({ data: reply }));
+    }
+    terminate() { terminated += 1; }
+  }
+  class TestImage {
+    src = "";
+    naturalWidth = 640;
+    naturalHeight = 480;
+    async decode() {}
+  }
+  for (const [key, value] of Object.entries({
+    Worker: FakeWorker, Image: TestImage, OffscreenCanvas: class {}, createImageBitmap: () => {},
+  })) {
+    originals.set(key, Object.getOwnPropertyDescriptor(globalThis, key));
+    Object.defineProperty(globalThis, key, { configurable: true, value });
+  }
+  t.after(() => {
+    for (const [key, original] of originals) {
+      if (original) Object.defineProperty(globalThis, key, original);
+      else Reflect.deleteProperty(globalThis, key);
+    }
+  });
+  const result = await faceAnalysisProvider.analyze(makeFile(pngHeader), true);
+  assert.equal(result.report.score, 100);
+  reply = {};
+  await assert.rejects(faceAnalysisProvider.analyze(makeFile(pngHeader), true), /pontos inválidos/);
+  reply = { error: "Modelo local indisponível" };
+  await assert.rejects(faceAnalysisProvider.analyze(makeFile(pngHeader), true), /Modelo local indisponível/);
+  abortOnPost = new AbortController();
+  await assert.rejects(faceAnalysisProvider.analyze(makeFile(pngHeader), true, abortOnPost.signal), { name: "AbortError" });
+  assert.equal(terminated, 4);
   assert.equal(fetchMock.mock.callCount(), 0);
 });
