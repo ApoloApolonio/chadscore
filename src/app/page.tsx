@@ -1,3 +1,5 @@
+import { SelfieUpload } from "@/components/selfie-upload";
+
 export default function Home() {
   return (
     <main className="flex min-h-svh flex-col bg-zinc-950 px-6">
@@ -20,19 +22,9 @@ export default function Home() {
         <p className="mt-6 max-w-md text-base leading-relaxed text-zinc-400 sm:text-lg">
           Descubra um novo olhar sobre o seu rosto.
           <br />
-          Estamos preparando essa experiência para você.
+          Escolha uma selfie para preparar sua análise.
         </p>
-        <button
-          type="button"
-          disabled
-          aria-describedby="analysis-status"
-          className="mt-10 rounded-xl bg-lime-300 px-7 py-4 text-sm font-semibold text-zinc-950 disabled:cursor-not-allowed disabled:opacity-70"
-        >
-          Analisar meu rosto
-        </button>
-        <p id="analysis-status" className="mt-4 text-xs text-zinc-500">
-          Em breve. A análise facial ainda não está disponível.
-        </p>
+        <SelfieUpload />
       </section>
 
       <footer className="mx-auto w-full max-w-6xl border-t border-zinc-800/70 py-6 text-center text-xs text-zinc-500">

@@ -25,6 +25,7 @@ No PowerShell, caso a política de execução bloqueie `npm.ps1`, use `npm.cmd i
 - `npm start`: inicia o build de produção.
 - `npm run lint`: verifica o código com ESLint.
 - `npm run typecheck`: verifica os tipos com TypeScript.
+- `npm test`: testa validação de arquivos e o adaptador de análise indisponível.
 
 ## Estrutura
 
@@ -32,4 +33,18 @@ No PowerShell, caso a política de execução bloqueie `npm.ps1`, use `npm.cmd i
 - `src/app/layout.tsx`: layout e metadados.
 - `src/app/globals.css`: estilos globais e importação do Tailwind.
 
-A página usa tema escuro e inclui o botão “Analisar meu rosto”, desabilitado enquanto a funcionalidade não está disponível. Não há captura de imagem, upload ou análise facial implementados. Nenhuma variável de ambiente é necessária nesta etapa.
+## Seleção de selfie
+
+A interface mantém o tema escuro e permite escolher, visualizar, substituir e remover uma selfie. Aceita JPG, PNG e WebP de até 5 MB; verifica tipo, assinatura do arquivo e decodificação da imagem. Isso valida o arquivo, não a presença de um rosto.
+
+O botão “Analisar meu rosto” fica habilitado somente após a validação. Ao clicar, a interface informa que a IA ainda não está conectada, sem produzir notas ou resultados fictícios.
+
+A imagem fica somente na memória do navegador via URL temporária (`blob:`). As URLs são liberadas ao trocar/remover a foto ou desmontar o componente. Não há upload para servidor, persistência, armazenamento local ou serviço externo. Nenhuma variável de ambiente é necessária nesta etapa.
+
+### Integração futura
+
+- `src/components/selfie-upload.tsx`: estados de seleção, validação, pré-visualização e solicitação de análise.
+- `src/lib/selfie.ts`: regras de validação local.
+- `src/lib/face-analysis.ts`: contrato `FaceAnalysisProvider` e adaptador indisponível, sem chamadas de rede. Substitua sua implementação e amplie `FaceAnalysisResponse` ao integrar um serviço real; a interface já trata processamento e falhas.
+
+Uma integração real deverá passar por um backend com validação própria, política explícita de privacidade e consentimento antes do envio. Mantenha credenciais exclusivamente no servidor; não use variáveis `NEXT_PUBLIC_*` para segredos. A validação no navegador não substitui a validação no backend.
