@@ -1,0 +1,26 @@
+node_modules/
+.next/
+out/
+build/
+*.tsbuildinfo
+.env*
+!.env.example
+*.log
+.DS_Store
+
+# Credenciais e chaves locais
+.npmrc
+.netrc
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.json
+
+# Configurações locais de deploy e ferramentas
+.vercel/
+.idea/
+.vscode/
+coverage/
+Thumbs.db
+Desktop.ini
