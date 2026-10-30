@@ -1,8 +1,10 @@
 import type { FaceReport } from "./analysis-schema";
 import { roundScore } from "./score-classification";
-import { estimateCapturePotential, faceTiltDegrees } from "./capture-potential";
+import { estimateCapturePotential } from "./capture-potential";
 import { calculateAppearanceScores } from "./appearance-scores";
-import { CALIBRATION_VERSION, geometricResponse, rms } from "./calibration";
+import { aggregateFaceScore, CALIBRATION_VERSION, geometricResponse, rms } from "./calibration";
+import { assessCapture } from "./capture-confidence";
+import { measureStructure } from "./structural-geometry";
 
 export type Point = { x: number; y: number };
 export type LandmarkDetection = {
@@ -10,6 +12,8 @@ export type LandmarkDetection = {
   captureLight?: unknown;
   faceMatrices?: unknown;
   appearance?: unknown;
+  captureQuality?: unknown;
+  faceExpressions?: unknown;
 };
 
 // Índices da topologia Face Mesh do MediaPipe (não representam medidas ósseas).
@@ -52,13 +56,14 @@ export function scoreFromErrors(errors: readonly number[]) {
   }));
   return {
     // Média harmônica: uma região menos equilibrada não desaparece na média de regiões perfeitas.
+    rawScore: 10 / (1 + components.reduce((sum, item) => sum + item.weight * (item.error / item.tolerance) ** 2, 0)),
     score: roundScore(10 / (1 + components.reduce((sum, item) => sum + item.weight * (item.error / item.tolerance) ** 2, 0))),
     components,
   };
 }
 
 /** Geometria pura: coordenadas em pixels, sem rede, inferência de atributos ou persistência. */
-export function calculateFaceReport({ faces, width, height, captureLight, faceMatrices, appearance }: LandmarkDetection): FaceReport {
+export function calculateFaceReport({ faces, width, height, captureLight, faceMatrices, appearance, captureQuality, faceExpressions }: LandmarkDetection): FaceReport {
   if (faces.length !== 1) {
     throw new Error(faces.length === 0
       ? "Nenhum rosto detectado. Use uma selfie nítida, de frente e bem iluminada."
@@ -130,22 +135,20 @@ export function calculateFaceReport({ faces, width, height, captureLight, faceMa
   const lowerFraction = (p[152].y - p[2].y) / faceHeight;
   const presentation = calculateAppearanceScores(appearance);
 
-  const matrices = Array.isArray(faceMatrices) ? faceMatrices : [];
-  const tilt = matrices.length === 1 ? faceTiltDegrees(matrices[0]) : null;
-  // Não interpreta perspectiva pronunciada como característica permanente do rosto.
-  const geometryReliable = tilt !== null && tilt <= 15;
+  const align = (index: number): Point | null => {
+    const point = landmarks[index];
+    if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y) || point.x < 0 || point.x > 1 || point.y < 0 || point.y > 1) return null;
+    const dx = point.x * width - origin.x, dy = point.y * height - origin.y;
+    return { x: dx * ex.x + dy * ex.y, y: dx * ey.x + dy * ey.y };
+  };
+  const lipTop = align(13), lipBottom = align(14);
+  const captureConfidence = assessCapture({ quality: captureQuality, matrices: faceMatrices, expressions: faceExpressions,
+    facePixels: faceWidth, mouthOpening: lipTop && lipBottom ? distance(lipTop, lipBottom) / distance(p[61], p[291]) : null });
+  const geometryReliable = captureConfidence.reliable;
 
   function regionalError(pairs: readonly (readonly [number, number])[]): number | null {
     if (!geometryReliable) return null;
     const points: { left: Point; right: Point }[] = [];
-    const align = (index: number): Point | null => {
-      const point = landmarks[index];
-      if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y) ||
-          point.x < 0 || point.x > 1 || point.y < 0 || point.y > 1) return null;
-      const dx = point.x * width - origin.x;
-      const dy = point.y * height - origin.y;
-      return { x: dx * ex.x + dy * ex.y, y: dx * ey.x + dy * ey.y };
-    };
     for (const [leftIndex, rightIndex] of pairs) {
       const left = align(leftIndex);
       const right = align(rightIndex);
@@ -169,10 +172,21 @@ export function calculateFaceReport({ faces, width, height, captureLight, faceMa
     regionalError(REGIONAL_PAIRS.chin), regionalError(REGIONAL_PAIRS.cheekbones),
   ];
   const regions = Object.fromEntries(SCORING_CRITERIA.map((criterion, i) => [criterion.key,
-    errors[i] === null ? null : roundScore(geometricResponse(errors[i]!, criterion.tolerance) / 10),
+    errors[i] === null ? null : geometricResponse(errors[i]!, criterion.tolerance) / 10,
   ])) as Record<(typeof SCORING_CRITERIA)[number]["key"], number | null>;
   const calibrated = errors.every((error) => error !== null) ? scoreFromErrors(errors as number[]) : null;
-  const score = calibrated?.score ?? null;
+  const structure = measureStructure(align, regions);
+  for (const key of Object.keys(structure.regions) as (keyof typeof structure.regions)[]) {
+    regions[key] = geometryReliable ? structure.regions[key] : null;
+  }
+  const structureScore = geometryReliable ? structure.score : null;
+  const harmonyScore = calibrated?.rawScore ?? null;
+  const aggregate = aggregateFaceScore(structureScore, harmonyScore);
+  const score = aggregate === null ? null : roundScore(aggregate);
+  if (geometryReliable && score === null) {
+    captureConfidence.reliable = false;
+    captureConfidence.reasons.push("Os contornos regionais estão incompletos. Use outra captura frontal, sem oclusões.");
+  }
   const components = calibrated?.components ?? [];
   const potentialRange = estimateCapturePotential(score, {
     landmarks, width, height, light: captureLight, matrices: faceMatrices,
@@ -194,18 +208,20 @@ export function calculateFaceReport({ faces, width, height, captureLight, faceMa
 
   return {
     calibrationVersion: CALIBRATION_VERSION,
+    captureConfidence,
+    scoring: { structure: structureScore, harmony: harmonyScore },
     score,
     potential: potentialRange?.upper ?? null,
     potentialRange,
     regions: {
-      ...regions,
+      ...Object.fromEntries(Object.entries(regions).map(([key, value]) => [key, value === null ? null : roundScore(value)])) as typeof regions,
       skin: presentation.skin,
       hair: presentation.hair,
-      harmony: score,
+      harmony: harmonyScore === null ? null : roundScore(harmonyScore),
     },
-    summary: "Índice subjetivo das sete regiões geométricas, normalizadas pela própria região. Não é uma nota científica de beleza. Captura insuficiente ou região ausente não recebe uma nota substituta.",
+    summary: "Calibração v3: 70% estrutura aparente 2D e 30% harmonia/simetria, agregadas sem compensação linear. Preferências estéticas do aplicativo, não beleza científica. Pele/cabelo permanecem índices independentes da apresentação fotográfica.",
     symmetry: `Erro RMS de reflexão: ${percent(mirrorError)} da largura facial. A pontuação regional usa a largura da própria região, sem padrão demográfico de proporções.`,
-    jawline: `Largura aparente do contorno inferior/largura facial: ${jawRatio.toFixed(2)}. Diferença entre distâncias dos dois lados ao queixo: ${percent(jawError)}. Não estima definição, gordura, ângulo ou estrutura óssea da mandíbula.`,
+    jawline: `Largura aparente do contorno inferior/largura facial: ${jawRatio.toFixed(2)}. Diferença bilateral: ${percent(jawError)}. A angularidade é apenas do contorno 2D; não estima ossos, gordura, profundidade ou definição por sombras.`,
     eyes: `Diferença relativa das larguras entre cantos dos olhos: ${percent(eyeError)}. Espaço entre cantos internos/largura facial: ${eyeGap.toFixed(2)}. Não mede saúde, visão ou formato ocular ideal.`,
     proportions: `Altura da malha facial/largura: ${aspect.toFixed(2)}. Largura da boca/largura facial: ${mouthRatio.toFixed(2)}. Trecho base do nariz–queixo/altura da malha: ${percent(lowerFraction)}. O topo da malha não é a linha do cabelo.`,
     looksmaxing,
@@ -224,6 +240,8 @@ export function calculateFaceReport({ faces, width, height, captureLight, faceMa
       { label: "Espaço interno dos olhos/largura facial", value: eyeGap, unit: "razão", method: "Distância 133–362 / largura alinhada 234–454." },
       { label: "Largura da boca/largura facial", value: mouthRatio, unit: "razão", method: "Distância 61–291 / largura alinhada 234–454." },
       { label: "Trecho base do nariz–queixo/altura facial", value: 100 * lowerFraction, unit: "%", method: "Altura alinhada 2–152 / altura alinhada 10–152 × 100." },
+      ...structure.metrics.filter((metric) => metric.value !== null).map((metric) => ({ label: metric.label, value: metric.value!, unit: metric.unit,
+        method: `Contorno 2D alinhado. Critério subjetivo v3: centro ${metric.target}, desvio de meia-resposta ${metric.halfResponse}. Não é norma populacional nem medida óssea.` })),
     ],
     scoreComponents: components,
   };

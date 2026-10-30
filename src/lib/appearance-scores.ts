@@ -17,7 +17,7 @@ const HairMetrics = z.object({
   relativeDetailVariation: z.number().nonnegative(), relativeGradientVariation: z.number().nonnegative(),
 });
 
-/** Notas somente de apresentação nos pixels confiáveis; não alteram a nota geral/PSL. */
+/** Apresentação fotográfica independente: não é estrutura e não altera a nota geral/PSL v3. */
 export function calculateAppearanceScores(metrics: unknown): { skin: number | null; hair: number | null } {
   const input = metrics && typeof metrics === "object" ? metrics as { skin?: unknown; hair?: unknown } : {};
   const skin = SkinMetrics.safeParse(input.skin);

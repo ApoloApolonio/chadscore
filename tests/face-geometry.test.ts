@@ -3,13 +3,16 @@ import { test } from "node:test";
 import { calculateFaceReport, scoreFromErrors } from "../src/lib/face-geometry";
 import { ReportSchema } from "../src/lib/analysis-schema";
 import { syntheticDetection } from "./fixtures/landmarks";
+import { aggregateFaceScore } from "../src/lib/calibration";
+import { roundScore } from "../src/lib/score-classification";
 
 const near = (actual: number, expected: number) => assert.ok(Math.abs(actual - expected) < 1e-8, `${actual} ≠ ${expected}`);
 
-test("pontos simétricos geram erro zero e nota calculada 10,0, sem nota fixa de fallback", () => {
+test("simetria perfeita não basta para nota estrutural perfeita", () => {
   const report = calculateFaceReport(syntheticDetection());
   assert.equal(ReportSchema.safeParse(report).success, true);
-  assert.equal(report.score, 10);
+  assert.equal(report.regions.harmony, 10);
+  assert.ok(report.score !== null && report.score < 10 && report.score > 0);
   for (const component of report.scoreComponents) near(component.error, 0);
   near(report.measurements.find((m) => m.label === "Altura/largura da malha facial")!.value, 1.4);
   near(report.measurements.find((m) => m.label === "Largura mandibular/largura facial")!.value, 0.72);
@@ -22,9 +25,9 @@ test("deslocamento detectável altera medições e nota segundo a fórmula publi
   data.faces[0][362].x += 0.02;
   const report = calculateFaceReport(data);
   assert.ok(report.score !== null && report.score < 10);
-  const expected = Math.round(100 / (1 + report.scoreComponents.reduce((sum, c) =>
-    sum + c.weight * (c.error / c.tolerance) ** 2, 0))) / 10;
-  assert.equal(report.score, expected);
+  const harmony = 10 / (1 + report.scoreComponents.reduce((sum, c) => sum + c.weight * (c.error / c.tolerance) ** 2, 0));
+  near(report.scoring.harmony!, harmony);
+  assert.equal(report.score, roundScore(aggregateFaceScore(report.scoring.structure, harmony)!));
 });
 
 test("nota tem pesos explícitos, decai com erro e fica entre 0 e 10", () => {
@@ -92,17 +95,17 @@ test("recomendações são condicionadas às proporções calculadas", () => {
   const report = calculateFaceReport(data);
   assert.match(report.looksmaxing[0], /supera 1,45/);
   assert.match(report.looksmaxing[1], /menos de 70%/);
-  assert.equal(report.score, 10); // Proporções descritivas não penalizam a nota.
+  assert.ok(report.score !== null && report.score < calculateFaceReport(syntheticDetection()).score!);
 });
 
 test("regiões com pontos suficientes têm índices próprios; pele, cabelo e potencial não são inventados", () => {
   const report = calculateFaceReport(syntheticDetection());
   for (const [region, value] of Object.entries(report.regions)) {
     if (["skin", "hair"].includes(region)) assert.equal(value, null);
-    else assert.equal(value, 10);
+    else assert.ok(value !== null && value >= 0 && value <= 10);
   }
   assert.equal(report.potential, null);
-  assert.equal(report.regions.harmony, report.score);
+  assert.equal(report.regions.harmony, 10);
   const data = syntheticDetection();
   data.faces[0][300].y += 0.04;
   const changed = calculateFaceReport(data);
@@ -117,5 +120,6 @@ test("pontos regionais ausentes ou degenerados resultam em não avaliado, nunca 
   const report = calculateFaceReport(data);
   assert.equal(report.regions.eyebrows, null);
   assert.equal(report.regions.nose, null);
-  assert.equal(report.regions.harmony, report.score);
+  assert.equal(report.regions.harmony, null);
+  assert.equal(report.score, null);
 });

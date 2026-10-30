@@ -19,7 +19,7 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="pt-BR" className={manrope.variable} data-build={process.env.NEXT_PUBLIC_BUILD_SHA} data-calibration="2">
+    <html lang="pt-BR" className={manrope.variable} data-build={process.env.NEXT_PUBLIC_BUILD_SHA} data-calibration="3">
       <body className="antialiased">
         <AnalysisSessionProvider>{children}</AnalysisSessionProvider>
       </body>

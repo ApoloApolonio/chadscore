@@ -7,6 +7,7 @@ self.onmessage = async ({ data }) => {
   let bitmap;
   let canvas;
   let appearanceCanvas;
+  let qualityCanvas;
   try {
     self.exports = {};
     self.importScripts("/mediapipe/vision_bundle.js");
@@ -18,7 +19,7 @@ self.onmessage = async ({ data }) => {
       numFaces: 2,
       minFaceDetectionConfidence: 0.6,
       minFacePresenceConfidence: 0.6,
-      outputFaceBlendshapes: false,
+      outputFaceBlendshapes: true,
       outputFacialTransformationMatrixes: true,
     });
     bitmap = await createImageBitmap(data.file, { imageOrientation: "from-image" });
@@ -36,12 +37,26 @@ self.onmessage = async ({ data }) => {
     const result = landmarker.detect(canvas);
     let captureLight = null;
     let appearance = null;
+    let captureQuality = null;
     if (result.faceLandmarks.length === 1) {
       try {
         const { sampleFaceLight } = await import("/capture-light.mjs");
         captureLight = sampleFaceLight(context.getImageData(0, 0, width, height), result.faceLandmarks[0]);
       } catch {
-        // A nota geométrica continua disponível; sem pixels confiáveis, potencial não estimado.
+        // Sem estatísticas de luz, o potencial não é estimado.
+      }
+      try {
+        const points = result.faceLandmarks[0];
+        const faceWidth = Math.hypot((points[454].x - points[234].x) * width, (points[454].y - points[234].y) * height);
+        const qualityScale = Math.min(1, 192 / faceWidth, 1024 / Math.max(width, height));
+        qualityCanvas = new OffscreenCanvas(Math.max(1, Math.round(width * qualityScale)), Math.max(1, Math.round(height * qualityScale)));
+        const qualityContext = qualityCanvas.getContext("2d");
+        if (!qualityContext) throw new Error("Canvas unavailable");
+        qualityContext.drawImage(canvas, 0, 0, qualityCanvas.width, qualityCanvas.height);
+        const { sampleCaptureQuality } = await import("/capture-quality.mjs");
+        captureQuality = sampleCaptureQuality(qualityContext.getImageData(0, 0, qualityCanvas.width, qualityCanvas.height), points, faceWidth);
+      } catch {
+        // Falta de confiança provoca abstenção; nunca uma nota substituta.
       }
       try {
         const points = result.faceLandmarks[0];
@@ -78,6 +93,8 @@ self.onmessage = async ({ data }) => {
     self.postMessage({
       faces: result.faceLandmarks, width, height,
       captureLight,
+      captureQuality,
+      faceExpressions: result.faceBlendshapes?.map((face) => face.categories.map(({ categoryName, score }) => ({ categoryName, score }))),
       appearance,
       faceMatrices: result.facialTransformationMatrixes,
     });
@@ -90,6 +107,7 @@ self.onmessage = async ({ data }) => {
     segmenter?.close();
     if (canvas) { canvas.width = 0; canvas.height = 0; }
     if (appearanceCanvas) { appearanceCanvas.width = 0; appearanceCanvas.height = 0; }
+    if (qualityCanvas) { qualityCanvas.width = 0; qualityCanvas.height = 0; }
     self.close();
   }
 };

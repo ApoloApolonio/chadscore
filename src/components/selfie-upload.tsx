@@ -102,7 +102,7 @@ export function SelfieUpload() {
       <div className="result-bubble home-card home-actions-card">
         <div id="photo-choices" className="grid grid-cols-2 gap-3">
           <button ref={cameraButton} type="button" disabled={isAnalyzing || isValidating} onClick={() => setShowCamera(true)} className="blue-focus photo-choice rounded-full px-4 py-3.5 text-xs text-blue-100 disabled:opacity-40">Tirar foto</button>
-          <button type="button" disabled={isAnalyzing || isValidating} onClick={() => inputRef.current?.click()} className="blue-focus photo-choice rounded-full px-4 py-3.5 text-xs text-blue-100 disabled:opacity-40">Selecionar foto</button>
+          <button type="button" disabled={isAnalyzing || isValidating} onClick={() => inputRef.current?.click()} className="blue-focus photo-select-button rounded-full px-4 py-3.5 text-xs disabled:opacity-40">Selecionar foto</button>
         </div>
         <button type="submit" disabled={!selection || isValidating || isAnalyzing || showCamera} aria-describedby="analysis-status" className="primary-button blue-focus mt-3 w-full rounded-full px-7 py-4 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-30">
           {isValidating ? "Validando imagem…" : isAnalyzing ? "Analisando…" : "Analisar rosto"}

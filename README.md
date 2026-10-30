@@ -51,7 +51,9 @@ Os avisos essenciais estão na página separada **`/privacidade`**. O FaceScan n
 
 O seletor abaixo do logo alterna entre **FaceScan** (análise individual preservada) e **MogBattle** (duas pessoas), sem mudar fórmulas, escala, arredondamento ou faixas PSL. Trocar de modo desmonta o fluxo anterior, cancela workers ativos e descarta suas fotos. Atualizar a página também descarta a batalha.
 
-No MogBattle, cada participante tem nome opcional, câmera com permissão nativa, galeria, prévia circular, troca e remoção. A autorização explícita para usar as duas fotos é obrigatória e é limpa ao trocar/remover imagens. Nomes e selfies nunca são enviados ou persistidos. Sem nome, usa Participante 1/2. O app não consegue verificar tecnicamente a titularidade ou a autorização declarada.
+No MogBattle, cada participante tem nome opcional, câmera com permissão nativa, galeria, prévia circular, troca e remoção. **Iniciar batalha** começa imediatamente as análises das duas fotos válidas, sem checkbox, modal, pop-up ou confirmação prévia. O botão permanece desabilitado enquanto faltar uma foto válida ou houver validação/análise em andamento. As orientações para usar somente imagens autorizadas pelos participantes ficam em **`/privacidade`**, sem interromper o fluxo; o app não verifica nem registra autorização. Nomes e selfies nunca são enviados ou persistidos. Sem nome, usa Participante 1/2.
+
+**Selecionar foto** usa azul-gelo #8CCBFF, texto preto, glow discreto e resposta suave de hover/press nos dois modos (incluindo os dois participantes e a alternativa de galeria da câmera). **Tirar foto** permanece escuro com borda prateada. Movimento reduzido desativa as transições.
 
 - `src/lib/battle-analysis.ts` é a orquestração local sobre o mesmo `faceAnalysisProvider`. As duas inferências são sequenciais para evitar dois runtimes WASM simultâneos no celular. Cache por identidade do `File`, restrito à batalha em memória, evita refazer um sucesso após a falha da outra foto. Cancelamento não coloca respostas atrasadas no cache. Arquivos removidos são excluídos do cache; encerrar reinicia o cache completo.
 - `src/lib/mogbattle.ts` compara os **mesmos décimos arredondados** que o FaceScan exibe. A diferença é calculada em inteiros de décimos para evitar resíduos de ponto flutuante. Nota maior vence; igualdade dá empate. Erro ou nota geral indisponível nunca declara vencedor.
@@ -64,7 +66,7 @@ O fundo global usa gradientes quase pretos, grid estático de baixa opacidade, v
 
 ### Planejado: MogBattle Live (não implementado)
 
-Ideia futura: contas, amigos, convites, batalhas online em tempo real, câmera própria de cada participante, escaneamento simultâneo e resultado quando ambas as análises terminarem. A comparação pura, o provider e a orquestração foram separados da interface para permitir reutilização futura. **Esta versão não cria contas, servidores, transporte de imagens, streaming, WebRTC, serviços pagos ou conexões de batalha remotas.** Uma versão Live exigiria outro projeto de consentimento, segurança, autenticação e privacidade, sem reutilizar implicitamente a autorização local.
+Ideia futura: contas, amigos, convites, batalhas online em tempo real, câmera própria de cada participante, escaneamento simultâneo e resultado quando ambas as análises terminarem. A comparação pura, o provider e a orquestração foram separados da interface para permitir reutilização futura. **Esta versão não cria contas, servidores, transporte de imagens, streaming, WebRTC, serviços pagos ou conexões de batalha remotas.** Uma versão Live exigiria outro projeto de consentimento, segurança, autenticação e privacidade, sem presumir autorização para compartilhar imagens.
 
 A câmera usa `getUserMedia` somente após uma ação explícita, com permissão do navegador e sem áudio. A captura é convertida em JPEG local, sem espelhamento e com lado máximo de 1280 px, e exige confirmação. Fechar (inclusive Escape), capturar ou sair do componente para todos os tracks; permissões resolvidas após fechar também são descartadas. Refazer solicita a câmera novamente. Sem câmera, sem suporte ou sem permissão, a seleção de arquivo/galeria permanece disponível. A câmera requer HTTPS ou localhost. Os testes de câmera usam streams sintéticos em memória; não acessam uma câmera física.
 
@@ -77,7 +79,7 @@ A câmera usa `getUserMedia` somente após uma ação explícita, com permissão
 - O worker, bitmaps, máscaras, instâncias MediaPipe e canvases são liberados ao concluir/cancelar. O timeout local é de 60 s. Não há garantia de apagamento criptográfico imediato da memória gerenciada.
 - A CSP do worker limita scripts e conexões à origem local; os testes verificam que só há GETs locais para recursos estáticos. Apenas código, fontes, WASM e modelos podem entrar no cache normal do navegador.
 
-## Calibração técnica v2
+## Calibração estética subjetiva v3
 
 ### Visualização facial local
 
@@ -87,7 +89,7 @@ Os círculos ATUAL/POTENCIAL representam exclusivamente os valores existentes, c
 
 Os resultados agrupam foto, indicadores, PSL, regiões e a ação de nova análise em superfícies escuras arredondadas, com contorno, glass e glow discretos. Não há observações explicativas visíveis entre esses blocos; os avisos gerais permanecem em `/privacidade`. A descrição técnica de Potencial é associada ao indicador para leitores de tela, sem ocupar espaço visual.
 
-A topologia estática em `src/lib/face-overlay.ts` deriva do MediaPipe (Apache-2.0); não carrega outro detector. A visualização funciona mesmo quando a nota se abstém por pose e não modifica notas, PSL, Potencial ou calibração. Os pontos representam geometria da foto, não beleza objetiva.
+A topologia estática em `src/lib/face-overlay.ts` deriva do MediaPipe (Apache-2.0); não carrega outro detector. A visualização não modifica notas, PSL, Potencial ou calibração. Capturas sem confiança agora pedem outra foto antes dos resultados. Os pontos representam geometria da foto, não beleza objetiva.
 
 **Critérios, investigação, fórmulas e limitações completos: [docs/CALIBRATION.md](docs/CALIBRATION.md).**
 
@@ -95,16 +97,23 @@ O caso de Pele 9,9 relatado sem imagem não pode ser diagnosticado/reproduzido i
 
 ### Geometria e geral
 
-Olhos, Sobrancelhas, Nariz, Lábios, Mandíbula, Queixo e Maçãs do rosto medem equilíbrio bilateral projetado, não tamanho/forma ideais. Usam coordenadas em pixels alinhadas e erros RMS normalizados pela própria região. Olhos consideram também largura e abertura relativas; mandíbula considera as distâncias laterais ao queixo.
+Fonte única dos pesos/alvos: `src/lib/calibration.ts`. A v3 usa **70% estrutura aparente e 30% harmonia/simetria**, com média harmônica ponderada, não soma linear. Estrutura considera largura/angularidade mandibular, proporções do queixo, contorno malar, abertura/inclinação dos olhos e relações com sobrancelhas. Os alvos são preferências subjetivas do app, não padrões científicos. Tom Welling, Ian Somerhalder e Marlon Lundgren Garcia são somente inspiração estética verbal; nenhuma foto ou medida dessas pessoas entrou na calibração.
 
 ```text
-componente = 100 / (1 + (erro regional / 0,08)²)
-nota regional = arredondar_1_casa(componente / 10)
-geral = arredondar_1_casa(10 / (1 + média((erro regional / 0,08)²)))
-harmonia facial = geral
+critério estrutural = 10 / (1 + (|medida − alvo| / meia_resposta)²)
+H(valores,pesos) = soma(pesos) / soma(peso/valor)
+forma regional = H(critérios da região, pesos configurados)
+região estrutural = H([forma, equilíbrio bilateral], [0,75, 0,25])
+estrutura = H([mandíbula, queixo, maçãs, olhos, sobrancelhas], [0,30, 0,20, 0,20, 0,20, 0,10])
+harmonia = 10 / (1 + média((erro bilateral regional / 0,08)²))
+geral = arredondar_1_casa(H([estrutura, harmonia], [0,70, 0,30]))
 ```
 
-A referência 0,08 é meia-resposta técnica, não norma biológica. Sem matriz de pose confiável, inclinação frontal até 15° e todas as sete regiões disponíveis, geral/Harmonia/PSL ficam `—`. Não se preenche região ausente com média ou zero. Pele e Cabelo não alteram a geral nem a classificação.
+A referência 0,08 é meia-resposta técnica, não norma biológica. A agregação usa valores não arredondados. Nariz/lábios continuam bilaterais; Harmonia inclui as sete regiões bilaterais. Simetria perfeita sozinha não garante 10. Não há desconto fixo, bônus de captura ou favoritismo por ordem de foto. Todos os alvos, pesos e medições estão documentados em [CALIBRATION.md](docs/CALIBRATION.md).
+
+A proposta 60/25/15 foi avaliada: apresentação poderia deslocar a geral em 1,5 ponto sem mudar nenhum ponto facial, além de depender de foco, textura e cabelo visível. Por isso pele/cabelo continuam independentes (0% na geral); 70/30 é uma escolha de produto testada, não uma distribuição estética cientificamente ótima.
+
+Exige matriz de pose até 12°, rosto com ≥160 px, detalhe canônico ≥0,015, clipping ≤20%, desequilíbrio lateral ≤35% e expressão neutra verificada por blendshapes e abertura labial. Falta de confiança solicita outra captura, sem nota ou vencedor. Escala, translação e rotação no plano são normalizadas quando possível; perspectiva/lente não são reconstruídas. Esses gates são heurísticos e não garantem equivalência entre fotos aceitas. Prefira distância/lente semelhantes e luz difusa. Contornos e sombras não são estrutura óssea real.
 
 ### Pele e Cabelo
 
@@ -149,7 +158,7 @@ faixa = [máximo(0; S−Δ), mínimo(10; S+Δ)], arredondada a uma casa
 potencial = limite superior
 ```
 
-As condições completas estão em `src/lib/capture-potential.ts` e nos testes. A geral já exige pose até 15° antes do cálculo. A próxima nota pode subir, cair, ficar igual ou sair dessa faixa. Não é intervalo de confiança estatístico nem garantia de melhoria.
+As condições completas estão em `src/lib/capture-potential.ts` e nos testes. A geral v3 já exige pose até 12° antes do cálculo. A próxima nota pode subir, cair, ficar igual ou sair dessa faixa. Não é intervalo de confiança estatístico nem garantia de melhoria.
 
 ## Testes, imagens e limites de confiança
 
@@ -161,6 +170,6 @@ As condições completas estão em `src/lib/capture-potential.ts` e nos testes. 
 
 `vercel.json` fixa preset Next.js, `npm ci` e **`npm run build`**, preservando o hook de preparação de modelos. Não use `next build` diretamente, pois pula `prebuild`. Use raiz do repositório, Output Directory padrão e Node.js LTS suportado (recomendado 24.x). O build precisa de rede para baixar modelos e Google Fonts; não há serviço de inferência remoto no navegador. Manrope é servida localmente por `next/font` depois do build.
 
-Um push para a branch conectada pode disparar deploy automático. O HTML identifica `data-calibration="2"` e `data-build` com `VERCEL_GIT_COMMIT_SHA` (ou `local` fora da Vercel), permitindo conferir que o domínio serve o commit certo. Não são segredos ou dados de selfies.
+Um push para a branch conectada pode disparar deploy automático. O HTML identifica `data-calibration="3"` e `data-build` com `VERCEL_GIT_COMMIT_SHA` (ou `local` fora da Vercel), permitindo conferir que o domínio serve o commit certo. Não são segredos ou dados de selfies.
 
 Fontes: [Face Landmarker](https://ai.google.dev/edge/mediapipe/solutions/vision/face_landmarker/web_js), [Image Segmenter](https://ai.google.dev/edge/mediapipe/solutions/vision/image_segmenter/index), [Manrope](https://github.com/google/fonts/tree/main/ofl/manrope). Respeite as licenças/termos dos modelos, do runtime Apache-2.0 e da fonte SIL Open Font License ao redistribuir os assets.

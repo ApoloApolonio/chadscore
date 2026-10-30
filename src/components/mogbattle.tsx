@@ -9,7 +9,6 @@ import { useBattlePhoto } from "./use-battle-photo";
 
 export function MogBattle() {
   const [names, setNames] = useState<[string, string]>(["", ""]);
-  const [authorized, setAuthorized] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [progress, setProgress] = useState<0 | 1>(0);
   const [error, setError] = useState("");
@@ -23,7 +22,7 @@ export function MogBattle() {
     run.current++;
     controller.current?.abort();
     if (previous) cache.current.delete(previous);
-    setResult(null); setError(""); setAuthorized(false); setAnalyzing(false);
+    setResult(null); setError(""); setAnalyzing(false);
   }, []);
   const first = useBattlePhoto(invalidate), second = useBattlePhoto(invalidate);
   useEffect(() => () => { run.current++; controller.current?.abort(); cache.current = new WeakMap(); }, []);
@@ -33,7 +32,7 @@ export function MogBattle() {
 
   async function start(event: React.FormEvent) {
     event.preventDefault();
-    if (!first.photo || !second.photo || !authorized || analyzing || first.validating || second.validating) return;
+    if (!first.photo || !second.photo || analyzing || first.validating || second.validating) return;
     const id = ++run.current;
     const photos = [first.photo, second.photo] as const;
     const labels = names.map((name, index) => name.trim().slice(0, 40) || `Participante ${index + 1}`);
@@ -70,8 +69,7 @@ export function MogBattle() {
       {([first, second] as const).map((draft, index) => <BattleParticipant key={index} index={index as 0 | 1} name={names[index]} onName={(name) => setNames((current) => index === 0 ? [name, current[1]] : [current[0], name])} draft={draft} disabled={analyzing} />)}
     </div>
     <div className="result-bubble battle-start">
-      <label className="battle-authorization"><input type="checkbox" checked={authorized} required disabled={analyzing || !first.photo || !second.photo || first.validating || second.validating} onChange={(event) => setAuthorized(event.target.checked)} />Tenho autorização dos dois participantes para usar estas fotos nesta comparação local.</label>
-      <button type="submit" className="primary-button blue-focus" disabled={analyzing || !authorized || !first.photo || !second.photo || first.validating || second.validating}>{analyzing ? "Analisando…" : "Iniciar batalha"}</button>
+      <button type="submit" className="primary-button blue-focus" disabled={analyzing || !first.photo || !second.photo || first.validating || second.validating}>{analyzing ? "Analisando…" : "Iniciar batalha"}</button>
       <p role="status" className="battle-progress">{analyzing ? `Analisando participante ${progress + 1} de 2…` : ""}</p>
       {error && <p role="alert" className="battle-error">{error}</p>}
       <p className="battle-fineprint">Fotos e nomes apenas na memória desta aba. Sem upload. Comparação estética subjetiva, não científica.</p>

@@ -26,7 +26,7 @@ export function BattleParticipant({ index, name, onName, draft, disabled }: {
     <input ref={file} type="file" accept={SELFIE_ACCEPT} hidden disabled={busy} aria-label={`Foto do ${label.toLowerCase()}`} onChange={(event) => { const image = event.target.files?.[0]; event.target.value = ""; if (image) void draft.select(image); }} />
     <div className="battle-photo-actions">
       <button ref={cameraButton} type="button" disabled={busy} onClick={() => setCamera(true)} className="photo-choice blue-focus">Tirar foto</button>
-      <button type="button" disabled={busy} onClick={() => file.current?.click()} className="photo-choice blue-focus">{draft.photo ? "Trocar foto" : "Selecionar foto"}</button>
+      <button type="button" disabled={busy} onClick={() => file.current?.click()} className="photo-select-button blue-focus">{draft.photo ? "Trocar foto" : "Selecionar foto"}</button>
     </div>
     {draft.photo && <button type="button" disabled={disabled} className="subtle-control blue-focus" onClick={() => { draft.remove(); cameraButton.current?.focus(); }}>Remover foto</button>}
     {draft.validating && <p role="status">Validando imagem…</p>}

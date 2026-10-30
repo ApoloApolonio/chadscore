@@ -124,7 +124,7 @@ test("relatório integra qualidade opcional, preserva nota/PSL e não persiste p
   data.faces[0][291].y += 0.04;
   data.faces[0][362].x += 0.02;
   const baseline = calculateFaceReport(data);
-  const withCapture = calculateFaceReport({ ...data, captureLight: syntheticLight(), faceMatrices: [syntheticFaceMatrix(14)] });
+  const withCapture = calculateFaceReport({ ...data, captureLight: syntheticLight(), faceMatrices: [syntheticFaceMatrix(10)] });
   assert.equal(withCapture.score, baseline.score);
   assert.ok(baseline.score !== null && withCapture.potential! > baseline.score);
   assert.equal(withCapture.potential, withCapture.potentialRange!.upper);

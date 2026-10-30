@@ -83,6 +83,14 @@ for (const width of [360, 1440]) {
     await page.keyboard.press("Tab");
     const select = page.getByRole("button", { name: "Selecionar foto", exact: true });
     await expect(select).toBeFocused();
+    await expect(select).toHaveCSS("background-color", "rgb(140, 203, 255)");
+    await expect(select).toHaveCSS("color", "rgb(0, 0, 0)");
+    await expect(select).not.toHaveCSS("box-shadow", "none");
+    await expect(select).toHaveCSS("transition-duration", /0\.18s/);
+    await select.hover();
+    await expect(select).toHaveCSS("filter", "brightness(1.06)");
+    await page.mouse.move(0, 0);
+    await expect(camera).not.toHaveCSS("background-color", "rgb(140, 203, 255)");
     const chooser = page.waitForEvent("filechooser");
     await select.press("Space");
     await (await chooser).setFiles({ name: "selfie.png", mimeType: "image/png", buffer: await sharp({ create: { width: 256, height: 256, channels: 3, background: "#607080" } }).png().toBuffer() });
@@ -104,6 +112,7 @@ for (const width of [360, 1440]) {
     expect(await page.evaluate(async (url) => { try { await fetch(url!); return true; } catch { return false; } }, photoUrl)).toBe(false);
     await page.emulateMedia({ reducedMotion: "reduce" });
     await expect(page.locator(".face-float")).toHaveCSS("animation-name", "none");
+    await expect(select).toHaveCSS("transition-duration", "0s");
     expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
     expect(remote).toEqual([]);
   });
@@ -200,6 +209,7 @@ test("identidade preta preservada em sessão vazia e página não encontrada", a
 test("avisos ficam em página separada sem checkbox ou restrição de idade", async ({ page }) => {
   await page.goto("/privacidade");
   await expect(page.getByRole("heading", { name: "Privacidade e limites" })).toBeVisible();
+  await expect(page.getByText(/Use imagens dos participantes somente com autorização deles/)).toBeVisible();
   await expect(page.getByText(/não há upload/i)).toBeVisible();
   await expect(page.getByText(/não mede beleza/i)).toBeVisible();
   await expect(page.getByRole("checkbox")).toHaveCount(0);

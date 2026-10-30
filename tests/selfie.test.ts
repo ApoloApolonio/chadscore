@@ -117,7 +117,7 @@ test("cliente usa worker local, valida pontos, trata erro e cancela liberando re
     }
   });
   const result = await faceAnalysisProvider.analyze(makeFile(pngHeader));
-  assert.equal(result.report.score, 10);
+  assert.ok(result.report.score !== null && result.report.score < 10);
   const detection = syntheticDetection();
   assert.deepEqual(result.visualization, {
     landmarks: detection.faces[0], width: detection.width, height: detection.height,

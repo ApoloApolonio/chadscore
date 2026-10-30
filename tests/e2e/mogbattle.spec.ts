@@ -46,6 +46,10 @@ async function photos(page: Page) {
   await person(page, 2).getByLabel("Foto do participante 2", { exact: true }).setInputFiles(await image("second.png"));
 }
 
+async function startBattle(page: Page) {
+  await page.getByRole("button", { name: "Iniciar batalha", exact: true }).click();
+}
+
 for (const width of [360, 1440]) for (const winner of [0, 1, null] as const) {
   test(`MogBattle ${width}px: ${winner === null ? "empate" : `vencedor ${winner + 1}`}, valores reais e descarte`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });
@@ -59,12 +63,21 @@ for (const width of [360, 1440]) for (const winner of [0, 1, null] as const) {
     await person(page, 2).getByRole("textbox").fill("Bruno");
     const start = page.getByRole("button", { name: "Iniciar batalha", exact: true });
     await expect(start).toBeDisabled();
+    await expect(page.getByRole("checkbox")).toHaveCount(0);
+    for (const index of [1, 2]) {
+      const select = person(page, index).getByRole("button", { name: "Selecionar foto", exact: true });
+      await expect(select).toHaveCSS("background-color", "rgb(140, 203, 255)");
+      await expect(select).toHaveCSS("color", "rgb(0, 0, 0)");
+      await expect(select).not.toHaveCSS("box-shadow", "none");
+      await expect(person(page, index).getByRole("button", { name: "Tirar foto", exact: true })).not.toHaveCSS("background-color", "rgb(140, 203, 255)");
+    }
     await photos(page);
     const urls = await page.locator(".battle-draft-portrait img").evaluateAll((images) => images.map((img) => img.getAttribute("src")!));
-    await expect(start).toBeDisabled();
+    await expect(start).toBeEnabled();
     expect(await page.evaluate(() => window.battleTest.workers)).toBe(0);
-    await page.getByRole("checkbox").check();
-    await start.click();
+    const startBounds = (await start.boundingBox())!, container = (await page.locator(".battle-start").boundingBox())!;
+    expect(startBounds.x + startBounds.width / 2).toBeCloseTo(container.x + container.width / 2, 0);
+    await startBattle(page);
     await expect(page.getByTestId("battle-outcome")).toHaveText(winner === null ? "EMPATE" : `${winner === 0 ? "Alex" : "Bruno"} venceu`);
     await expect(page.getByTestId("battle-outcome")).toBeFocused();
     const reports = [calculateFaceReport(a), calculateFaceReport(b)];
@@ -110,16 +123,16 @@ for (const width of [360, 1440]) for (const winner of [0, 1, null] as const) {
 
 test("falhas não declaram vencedor e repetição reutiliza análise bem-sucedida", async ({ page }) => {
   await mock(page, { "first.png": syntheticDetection(), "second.png": { error: "Nenhum rosto detectado" }, "fixed.png": uneven() });
-  await setup(page); await photos(page); await page.getByRole("checkbox").check();
-  await page.getByRole("button", { name: "Iniciar batalha", exact: true }).click();
+  await setup(page); await photos(page);
+  await startBattle(page);
   await expect(page.getByRole("form").getByRole("alert")).toContainText("Nenhum rosto detectado");
   await expect(page.getByTestId("battle-outcome")).toHaveCount(0);
-  await page.getByRole("button", { name: "Iniciar batalha", exact: true }).click();
+  await startBattle(page);
   await expect.poll(() => page.evaluate(() => window.battleTest.workers)).toBe(3);
   await expect(page.getByRole("button", { name: "Iniciar batalha", exact: true })).toBeEnabled();
   await person(page, 2).getByLabel("Foto do participante 2", { exact: true }).setInputFiles(await image("fixed.png"));
-  await expect(page.getByRole("checkbox")).not.toBeChecked();
-  await page.getByRole("checkbox").check(); await page.getByRole("button", { name: "Iniciar batalha", exact: true }).click();
+  await expect(page.getByRole("checkbox")).toHaveCount(0);
+  await startBattle(page);
   await expect(page.getByTestId("battle-outcome")).toContainText("Participante 1 venceu");
   expect(await page.evaluate(() => window.battleTest.files)).toEqual(["first.png", "second.png", "second.png", "fixed.png"]);
 });
@@ -131,20 +144,21 @@ test("nota geral indisponível, arquivo inválido e remoção não inventam resu
   await person(page, 1).getByLabel("Foto do participante 1").setInputFiles({ name: "bad.png", mimeType: "image/png", buffer: Buffer.from("invalid") });
   await expect(person(page, 1).getByRole("alert")).toContainText("não corresponde");
   await expect(page.getByRole("button", { name: "Iniciar batalha", exact: true })).toBeDisabled();
-  await photos(page); await page.getByRole("checkbox").check();
-  await page.getByRole("button", { name: "Iniciar batalha", exact: true }).click();
-  await expect(page.getByRole("form").getByRole("alert")).toContainText("Nenhum vencedor foi declarado");
+  await photos(page);
+  await startBattle(page);
+  await expect(page.getByRole("form").getByRole("alert")).toContainText("Captura sem confiança suficiente");
   await expect(page.getByTestId("battle-outcome")).toHaveCount(0);
   const url = await person(page, 1).locator("img").getAttribute("src");
   await person(page, 1).getByRole("button", { name: "Remover foto", exact: true }).click();
-  await expect(page.getByRole("checkbox")).not.toBeChecked();
+  await expect(page.getByRole("checkbox")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Iniciar batalha", exact: true })).toBeDisabled();
   expect(await page.evaluate(async (href) => { try { await fetch(href!); return true; } catch { return false; } }, url)).toBe(false);
 });
 
 test("mudar de modo aborta processamento e libera selfies; FaceScan continua utilizável", async ({ page }) => {
   await mock(page, {}, true); await setup(page); await photos(page);
   const urls = await page.locator(".battle-draft-portrait img").evaluateAll((images) => images.map((img) => img.getAttribute("src")!));
-  await page.getByRole("checkbox").check(); await page.getByRole("button", { name: "Iniciar batalha", exact: true }).click();
+  await startBattle(page);
   await expect.poll(() => page.evaluate(() => window.battleTest.workers)).toBe(1);
   await page.getByRole("button", { name: "FaceScan", exact: true }).click();
   await expect(page.getByRole("button", { name: "Analisar rosto", exact: true })).toBeDisabled();
@@ -164,4 +178,33 @@ test("câmera do participante sem permissão oferece galeria e não ativa a outr
   await (await chooser).setFiles(await image("second.png"));
   await expect(person(page, 2).getByRole("img")).toBeVisible();
   await expect(person(page, 1).getByRole("img")).toHaveCount(0);
+});
+
+test("batalha começa diretamente com duas fotos válidas, sem checkbox, modal ou pop-up", async ({ page }) => {
+  await mock(page, { "first.png": syntheticDetection(), "second.png": uneven() });
+  let popups = 0;
+  page.on("dialog", async (dialog) => { popups++; await dialog.dismiss(); });
+  await setup(page);
+  const start = page.getByRole("button", { name: "Iniciar batalha", exact: true });
+  await expect(start).toBeDisabled();
+  await expect(page.locator(".battle-authorization, input[type=checkbox]")).toHaveCount(0);
+  await person(page, 1).getByLabel("Foto do participante 1", { exact: true }).setInputFiles(await image("first.png"));
+  await expect(person(page, 1).getByRole("img")).toBeVisible();
+  await expect(start).toBeDisabled();
+  expect(await page.evaluate(() => window.battleTest.workers)).toBe(0);
+  await person(page, 2).getByLabel("Foto do participante 2", { exact: true }).setInputFiles(await image("second.png"));
+  await expect(start).toBeEnabled();
+  expect(await page.evaluate(() => window.battleTest.workers)).toBe(0);
+  await start.press("Enter");
+  await expect(page.getByTestId("battle-outcome")).toContainText("venceu");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Confirmar e iniciar", exact: true })).toHaveCount(0);
+  expect(await page.evaluate(() => window.battleTest.workers)).toBe(2);
+  await page.getByRole("button", { name: "Batalhar novamente", exact: true }).click();
+  await expect(start).toBeDisabled();
+  await photos(page); await startBattle(page);
+  await expect(page.getByTestId("battle-outcome")).toContainText("venceu");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect(await page.evaluate(() => window.battleTest.workers)).toBe(4);
+  expect(popups).toBe(0);
 });

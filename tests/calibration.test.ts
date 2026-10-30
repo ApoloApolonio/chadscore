@@ -69,15 +69,17 @@ test("resposta geométrica não tem corte artificial ou bônus; 8% de erro é me
   assert.ok(geometricResponse(0.16, 0.08) > 0);
 });
 
-test("todas as regiões geométricas reagem a assimetrias locais, sem proporções ideais", () => {
+test("assimetria local reduz o componente bilateral, mesmo se aproximar um alvo estrutural", () => {
   for (const [key, point] of [["eyes", 386], ["eyebrows", 300], ["nose", 327], ["lips", 291],
     ["jawline", 397], ["chin", 377], ["cheekbones", 323]] as const) {
     const baseline = syntheticDetection();
     const unchanged = calculateFaceReport(baseline);
     baseline.faces[0][point].y += 0.015;
     const changed = calculateFaceReport(baseline);
-    assert.ok(changed.regions[key] !== null && changed.regions[key]! < unchanged.regions[key]!);
-    assert.ok(changed.score !== null && changed.score < unchanged.score!);
+    assert.ok(changed.regions[key] !== null);
+    const label = { eyes: "Olhos", eyebrows: "Sobrancelhas", nose: "Nariz", lips: "Lábios", jawline: "Mandíbula", chin: "Queixo", cheekbones: "Maçãs" }[key];
+    assert.ok(changed.scoreComponents.find((component) => component.label.startsWith(label))!.error > 0);
+    assert.ok(changed.scoring.harmony! < unchanged.scoring.harmony!);
   }
 });
 

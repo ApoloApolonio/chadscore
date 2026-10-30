@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 import sharp from "sharp";
 import { createHash } from "node:crypto";
-import { syntheticDetection, syntheticFaceMatrix, syntheticLight } from "../fixtures/landmarks";
+import { syntheticDetection, syntheticFaceMatrix, syntheticLight, syntheticExpressions } from "../fixtures/landmarks";
 import { calculateFaceReport } from "../../src/lib/face-geometry";
 import { classifyPotential, classifyPSL, formatScore } from "../../src/lib/score-classification";
 import { syntheticAppearance } from "../fixtures/appearance";
@@ -236,26 +236,23 @@ test("Manrope é servida localmente por next/font e a calibração publicada é 
   await page.goto("/");
   await page.evaluate(() => document.fonts.ready);
   await expect(page.locator("body")).toHaveCSS("font-family", /Manrope/);
-  await expect(page.locator("html")).toHaveAttribute("data-calibration", "2");
+  await expect(page.locator("html")).toHaveAttribute("data-calibration", "3");
   await expect(page.locator("html")).toHaveAttribute("data-build", "local");
   expect(fonts.length).toBeGreaterThan(0);
   expect(fonts.every((status) => status === 200)).toBe(true);
   expect(external).toEqual([]);
 });
 
-test("pose sem confiança mostra traços em vez de nota geral e PSL inventados", async ({ page }) => {
+test("pose sem confiança solicita nova captura sem nota ou navegação", async ({ page }) => {
   const detection = syntheticDetection();
   detection.faceMatrices = [syntheticFaceMatrix(20)];
   await mockLocalDetection(page, detection);
   await page.goto("/");
   await page.getByLabel("Escolher selfie", { exact: true }).setInputFiles(await syntheticImage());
   await page.getByRole("button", { name: "Analisar rosto" }).click();
-  await expect(page).toHaveURL(/\/resultados$/);
-  for (const name of ["overall-score", "psl-classification", "potential-score"]) {
-    await expect(page.getByTestId(name)).toHaveText("—");
-  }
-  await expect(page.getByTestId("potential-label")).toHaveText("Não estimado");
-  await expect(page.locator(".score-ring-fill, .region-marker")).toHaveCount(0);
+  await expect(page.locator("#selfie-error")).toContainText("Captura sem confiança suficiente");
+  await expect(page).not.toHaveURL(/\/resultados$/);
+  await expect(page.getByTestId("overall-score")).toHaveCount(0);
 });
 
 test("worker de produção usa máscaras e pixels locais para pele/cabelo; somente detectores são sintéticos", async ({ page, context }) => {
@@ -265,7 +262,7 @@ test("worker de produção usa máscaras e pixels locais para pele/cabelo; somen
     body: `self.exports = {
       FilesetResolver: { forVisionTasks: async () => ({}) },
       FaceLandmarker: { createFromOptions: async () => ({
-        detect: () => ({ faceLandmarks: ${JSON.stringify(detection.faces)}, facialTransformationMatrixes: ${JSON.stringify([syntheticFaceMatrix()])} }), close() {}
+        detect: () => ({ faceBlendshapes: [{ categories: ${JSON.stringify(syntheticExpressions())} }], faceLandmarks: ${JSON.stringify(detection.faces)}, facialTransformationMatrixes: ${JSON.stringify([syntheticFaceMatrix()])} }), close() {}
       }) },
       ImageSegmenter: { createFromOptions: async () => ({
         getLabels: () => ['background','hair','body-skin','face-skin','clothes','others'],
@@ -402,7 +399,7 @@ for (const width of [360, 1440]) {
     detection.faces[0][291].y += 0.04;
     detection.faces[0][362].x += 0.02;
     detection.captureLight = syntheticLight();
-    detection.faceMatrices = [syntheticFaceMatrix(14)];
+    detection.faceMatrices = [syntheticFaceMatrix(10)];
     const report = calculateFaceReport(detection);
     expect(report.potential).not.toBeNull();
     expect(report.potential!).toBeGreaterThan(report.score!);
@@ -442,7 +439,7 @@ test("worker real calcula luz dos pixels locais; detector substituído apenas ne
     body: `self.exports = {
       FilesetResolver: { forVisionTasks: async () => ({}) },
       FaceLandmarker: { createFromOptions: async () => ({
-        detect: () => ({ faceLandmarks: ${JSON.stringify(detection.faces)}, facialTransformationMatrixes: ${JSON.stringify([syntheticFaceMatrix(14)])} }),
+        detect: () => ({ faceBlendshapes: [{ categories: ${JSON.stringify(syntheticExpressions())} }], faceLandmarks: ${JSON.stringify(detection.faces)}, facialTransformationMatrixes: ${JSON.stringify([syntheticFaceMatrix(10)])} }),
         close() {}
       }) }
     };`,
@@ -450,7 +447,9 @@ test("worker real calcula luz dos pixels locais; detector substituído apenas ne
   const requests: { url: string; method: string }[] = [];
   page.on("request", (request) => requests.push({ url: request.url(), method: request.method() }));
   await page.goto("/");
-  await page.getByLabel("Escolher selfie", { exact: true }).setInputFiles(await syntheticImage());
+  const fixture = syntheticAppearance();
+  const buffer = await sharp(fixture.image.data, { raw: { width: fixture.image.width, height: fixture.image.height, channels: 4 } }).png().toBuffer();
+  await page.getByLabel("Escolher selfie", { exact: true }).setInputFiles({ name: "procedural-detail.png", mimeType: "image/png", buffer });
   await page.getByRole("button", { name: "Analisar rosto" }).click();
   await expect(page).toHaveURL(/\/resultados$/);
   await expect(page.getByTestId("potential-score")).toHaveText(/^\d{1,2},\d$/);

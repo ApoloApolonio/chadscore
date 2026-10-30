@@ -43,9 +43,13 @@ export const faceAnalysisProvider: FaceAnalysisProvider = {
           }
           const detection = LandmarkResultSchema.safeParse(data);
           if (!detection.success) throw new Error("O detector retornou pontos inválidos. Tente outra foto.");
+          const calculated = calculateFaceReport(detection.data);
+          if (calculated.score === null || !calculated.captureConfidence.reliable) {
+            throw new Error(`Captura sem confiança suficiente. ${calculated.captureConfidence.reasons.join(" ")} Selecione outra foto; nenhuma nota ou vencedor foi atribuído.`);
+          }
           resolve(SuccessResponseSchema.parse({
             status: "completed",
-            report: calculateFaceReport(detection.data),
+            report: calculated,
             visualization: {
               landmarks: detection.data.faces[0],
               width: detection.data.width,

@@ -25,7 +25,16 @@ export function syntheticDetection(): LandmarkDetection {
   set(176, 0.43, 0.80); set(400, 0.57, 0.80);
   set(93, 0.27, 0.53); set(323, 0.73, 0.53);
   set(132, 0.29, 0.60); set(361, 0.71, 0.60);
-  return { faces: [points], width: 1000, height: 1000, faceMatrices: [syntheticFaceMatrix()] };
+  return { faces: [points], width: 1000, height: 1000, faceMatrices: [syntheticFaceMatrix()],
+    captureQuality: syntheticQuality(), faceExpressions: [syntheticExpressions()] };
+}
+
+export function syntheticQuality() {
+  return { sampleCount: 2000, sourceFaceWidth: 500, canonicalFaceWidth: 192, detail: .10, clippedFraction: 0, lightingImbalance: 0 };
+}
+
+export function syntheticExpressions() {
+  return ["jawOpen", "mouthSmileLeft", "mouthSmileRight", "eyeBlinkLeft", "eyeBlinkRight", "browInnerUp", "browOuterUpLeft", "browOuterUpRight"].map((categoryName) => ({ categoryName, score: 0 }));
 }
 
 export function syntheticLight() {

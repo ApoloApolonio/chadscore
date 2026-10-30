@@ -1,12 +1,14 @@
 import { z } from "zod";
 
 export const ESTIMATE_NOTICE =
-  "A pontuação é um índice subjetivo de equilíbrio bilateral 2D, com pesos escolhidos pelo ChadScore. Não mede beleza, saúde ou valor pessoal e não tem validação científica. Luz, ângulo, expressão e erros dos pontos detectados influenciam o resultado.";
+  "A pontuação aplica preferências estéticas subjetivas do ChadScore a contornos e relações 2D. Não mede beleza científica, estrutura óssea real, saúde ou valor pessoal. Luz, lente, ângulo, expressão e erros dos pontos influenciam o resultado.";
 
 const description = z.string().min(1).max(1200);
 
 export const ReportSchema = z.strictObject({
-  calibrationVersion: z.literal("2"),
+  calibrationVersion: z.literal("3"),
+  captureConfidence: z.object({ reliable: z.boolean(), reasons: z.array(z.string()).max(8) }),
+  scoring: z.object({ structure: z.number().min(0).max(10).nullable(), harmony: z.number().min(0).max(10).nullable() }),
   score: z.number().min(0).max(10).nullable(),
   potential: z.number().min(0).max(10).nullable(),
   potentialRange: z.object({
@@ -35,7 +37,7 @@ export const ReportSchema = z.strictObject({
   measurements: z.array(z.strictObject({
     label: z.string(),
     value: z.number().finite(),
-    unit: z.enum(["%", "razão"]),
+    unit: z.enum(["%", "razão", "°"]),
     method: z.string(),
   })),
   scoreComponents: z.array(z.strictObject({
@@ -51,10 +53,12 @@ export const LandmarkResultSchema = z.object({
   faces: z.array(z.array(z.object({ x: z.number(), y: z.number() })).min(468).max(478)).max(2),
   width: z.number().int().positive().max(1280),
   height: z.number().int().positive().max(1280),
-  // Estatísticas opcionais: erro/ausência não deve inutilizar a análise geométrica.
+  // Dados ausentes/ilegíveis são aceitos no transporte, mas provocam abstenção da nota.
   captureLight: z.unknown().optional(),
   faceMatrices: z.unknown().optional(),
   appearance: z.unknown().optional(),
+  captureQuality: z.unknown().optional(),
+  faceExpressions: z.unknown().optional(),
 });
 
 export const FaceVisualizationSchema = z.strictObject({

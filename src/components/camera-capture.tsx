@@ -96,7 +96,7 @@ export function CameraCapture({ onCapture, onClose, onSelect }: { onCapture: (fi
           <button type="button" onClick={() => { dialog.current?.close(); onCapture(shot.file); onClose(); }} className="primary-button blue-focus rounded-xl px-4 py-3 text-xs font-semibold">Usar esta foto</button>
           <button type="button" onClick={() => { setShot(null); setError(""); setAttempt((n) => n + 1); }} className="blue-focus rounded-xl px-4 py-3 text-xs text-blue-200">Tirar outra foto</button>
         </> : <button type="button" disabled={!ready || capturing} onClick={capture} className="primary-button blue-focus rounded-xl px-4 py-3 text-xs font-semibold disabled:opacity-40">{capturing ? "Capturando…" : "Capturar selfie"}</button>}
-        <button type="button" onClick={() => { dialog.current?.close(); onSelect(); }} className="blue-focus rounded-xl px-4 py-3 text-xs text-blue-200">Selecionar foto</button>
+        <button type="button" onClick={() => { dialog.current?.close(); onSelect(); }} className="photo-select-button blue-focus px-4 py-3 text-xs">Selecionar foto</button>
       </div>
     </dialog>
   );
