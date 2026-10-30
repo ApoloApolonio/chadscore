@@ -39,6 +39,10 @@ Runtime `@mediapipe/tasks-vision@0.10.21`, sem a telemetria observada na versão
 
 Os URLs oficiais/versionados estão em `scripts/prepare-models.mjs`. Os assets gerados ficam fora do Git. Se houver erro de rede, execute novamente `npm run prepare:models`; hash inválido interrompe o build em vez de servir um modelo corrompido. O segmentador multiclasses (cerca de 16,4 MB) separa fundo, cabelo, pele corporal, pele facial, roupas e acessórios.
 
+## Ícone oficial
+
+O ícone do ChadScore é o retrato do rosto em círculo azul sobre fundo preto. A fonte versionada é `assets/chadscore-icon.png` (1254×1254, SHA-256 `04fbb5712808764a718820feae5386c8f73cbf801ab867e56c6da6ecf16b7595`). `npm run prepare:icons` gera `public/icons/icon-{16,32,48,180,512}.png` com recorte centralizado e `public/favicon.ico` com frames PNG 16/32/48. Os metadados do App Router em `src/lib/site-icons.ts` declaram ícone de aba, atalho e apple-touch-icon; a ilustração SVG interativa da página inicial não é usada como ícone.
+
 ## Captura e privacidade
 
 A página inicial contém logo e seletor FaceScan/MogBattle. No FaceScan, permanecem a ilustração SVG autoral, **Tirar foto**, **Selecionar foto** e **Analisar rosto**. Os dois botões de captura ficam sempre visíveis, lado a lado. A prévia circular substitui a ilustração; os mesmos botões permitem trocar a imagem. Animações respeitam movimento reduzido. O FaceScan não tem checkbox nem validação de idade. **Analisar rosto** habilita com uma imagem válida e só inicia a inferência ao ser acionado. A prévia não exibe landmarks inventados antes da inferência. Apenas erros operacionais são mostrados quando necessário; os estados de validação/análise são anunciados de forma acessível.

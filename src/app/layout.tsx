@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Manrope } from "next/font/google";
 import { AnalysisSessionProvider } from "@/components/analysis-session";
+import { siteIcons } from "@/lib/site-icons";
 import "./globals.css";
 
 const manrope = Manrope({
@@ -13,6 +14,7 @@ const manrope = Manrope({
 export const metadata: Metadata = {
   title: "ChadScore",
   description: "ChadScore — indicadores faciais 2D gratuitos com MediaPipe, processados apenas no seu navegador.",
+  icons: siteIcons,
 };
 
 export default function RootLayout({

@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "prepare:models": "node scripts/prepare-models.mjs",
+    "prepare:icons": "node scripts/prepare-icons.mjs",
     "predev": "npm run prepare:models",
     "prebuild": "npm run prepare:models",
     "dev": "next dev",
