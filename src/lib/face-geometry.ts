@@ -1,7 +1,16 @@
 import type { FaceReport } from "./analysis-schema";
+import { roundScore } from "./score-classification";
+import { estimateCapturePotential, faceTiltDegrees } from "./capture-potential";
+import { calculateAppearanceScores } from "./appearance-scores";
+import { CALIBRATION_VERSION, geometricResponse, rms } from "./calibration";
 
 export type Point = { x: number; y: number };
-export type LandmarkDetection = { faces: Point[][]; width: number; height: number };
+export type LandmarkDetection = {
+  faces: Point[][]; width: number; height: number;
+  captureLight?: unknown;
+  faceMatrices?: unknown;
+  appearance?: unknown;
+};
 
 // Índices da topologia Face Mesh do MediaPipe (não representam medidas ósseas).
 export const SYMMETRY_PAIRS = [
@@ -10,32 +19,46 @@ export const SYMMETRY_PAIRS = [
 ] as const;
 
 export const SCORING_CRITERIA = [
-  { label: "Reflexão de 7 pares de pontos", weight: 0.60, tolerance: 0.08 },
-  { label: "Equilíbrio das larguras dos olhos", weight: 0.25, tolerance: 0.30 },
-  { label: "Equilíbrio dos lados do contorno mandibular", weight: 0.15, tolerance: 0.30 },
+  { key: "eyes", label: "Olhos: reflexão, largura e abertura relativa", weight: 1 / 7, tolerance: 0.08 },
+  { key: "eyebrows", label: "Sobrancelhas: reflexão regional", weight: 1 / 7, tolerance: 0.08 },
+  { key: "nose", label: "Nariz: reflexão regional", weight: 1 / 7, tolerance: 0.08 },
+  { key: "lips", label: "Lábios: reflexão regional", weight: 1 / 7, tolerance: 0.08 },
+  { key: "jawline", label: "Mandíbula: reflexão e lados do contorno", weight: 1 / 7, tolerance: 0.08 },
+  { key: "chin", label: "Queixo: reflexão regional", weight: 1 / 7, tolerance: 0.08 },
+  { key: "cheekbones", label: "Maçãs do rosto: reflexão regional", weight: 1 / 7, tolerance: 0.08 },
 ] as const;
+
+/** Pares bilaterais: sem proporções ideais, etnia ou avaliação de estrutura óssea. */
+export const REGIONAL_PAIRS = {
+  eyebrows: [[70, 300], [63, 293], [105, 334]],
+  nose: [[98, 327], [129, 358]],
+  lips: [[61, 291], [40, 270], [91, 321]],
+  chin: [[148, 377], [149, 378], [176, 400]],
+  cheekbones: [[93, 323], [132, 361], [234, 454]],
+} as const;
 
 const distance = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y);
 const difference = (a: number, b: number) => Math.abs(a - b) / Math.max(a, b);
 const percent = (n: number) => `${(100 * n).toFixed(1)}%`;
 
 export function scoreFromErrors(errors: readonly number[]) {
-  if (errors.length !== 3 || errors.some((n) => !Number.isFinite(n) || n < 0)) {
+  if (errors.length !== SCORING_CRITERIA.length || errors.some((n) => !Number.isFinite(n) || n < 0)) {
     throw new Error("Indicadores insuficientes para calcular a pontuação.");
   }
   const components = SCORING_CRITERIA.map((criterion, index) => ({
-    ...criterion,
+    label: criterion.label, weight: criterion.weight, tolerance: criterion.tolerance,
     error: errors[index],
-    score: 100 * Math.max(0, 1 - errors[index] / criterion.tolerance),
+    score: geometricResponse(errors[index], criterion.tolerance),
   }));
   return {
-    score: Math.round(components.reduce((sum, item) => sum + item.weight * item.score, 0)),
+    // Média harmônica: uma região menos equilibrada não desaparece na média de regiões perfeitas.
+    score: roundScore(10 / (1 + components.reduce((sum, item) => sum + item.weight * (item.error / item.tolerance) ** 2, 0))),
     components,
   };
 }
 
 /** Geometria pura: coordenadas em pixels, sem rede, inferência de atributos ou persistência. */
-export function calculateFaceReport({ faces, width, height }: LandmarkDetection): FaceReport {
+export function calculateFaceReport({ faces, width, height, captureLight, faceMatrices, appearance }: LandmarkDetection): FaceReport {
   if (faces.length !== 1) {
     throw new Error(faces.length === 0
       ? "Nenhum rosto detectado. Use uma selfie nítida, de frente e bem iluminada."
@@ -96,8 +119,8 @@ export function calculateFaceReport({ faces, width, height }: LandmarkDetection)
     throw new Error("Os olhos parecem fechados ou encobertos. Use uma foto com os dois olhos visíveis.");
   }
 
-  const mirrorError = SYMMETRY_PAIRS.reduce((sum, [left, right]) =>
-    sum + Math.hypot(p[left].x + p[right].x - 2 * axis, p[left].y - p[right].y) / faceWidth, 0) / SYMMETRY_PAIRS.length;
+  const mirrorError = rms(SYMMETRY_PAIRS.map(([left, right]) =>
+    Math.hypot(p[left].x + p[right].x - 2 * axis, p[left].y - p[right].y) / faceWidth));
   const eyeError = difference(leftEyeWidth, rightEyeWidth);
   const jawError = difference(leftJaw, rightJaw);
   const aspect = faceHeight / faceWidth;
@@ -105,7 +128,55 @@ export function calculateFaceReport({ faces, width, height }: LandmarkDetection)
   const eyeGap = distance(p[133], p[362]) / faceWidth;
   const mouthRatio = distance(p[61], p[291]) / faceWidth;
   const lowerFraction = (p[152].y - p[2].y) / faceHeight;
-  const { score, components } = scoreFromErrors([mirrorError, eyeError, jawError]);
+  const presentation = calculateAppearanceScores(appearance);
+
+  const matrices = Array.isArray(faceMatrices) ? faceMatrices : [];
+  const tilt = matrices.length === 1 ? faceTiltDegrees(matrices[0]) : null;
+  // Não interpreta perspectiva pronunciada como característica permanente do rosto.
+  const geometryReliable = tilt !== null && tilt <= 15;
+
+  function regionalError(pairs: readonly (readonly [number, number])[]): number | null {
+    if (!geometryReliable) return null;
+    const points: { left: Point; right: Point }[] = [];
+    const align = (index: number): Point | null => {
+      const point = landmarks[index];
+      if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y) ||
+          point.x < 0 || point.x > 1 || point.y < 0 || point.y > 1) return null;
+      const dx = point.x * width - origin.x;
+      const dy = point.y * height - origin.y;
+      return { x: dx * ex.x + dy * ex.y, y: dx * ey.x + dy * ey.y };
+    };
+    for (const [leftIndex, rightIndex] of pairs) {
+      const left = align(leftIndex);
+      const right = align(rightIndex);
+      // Pares colapsados/incompletos não recebem uma nota fictícia de simetria.
+      if (!left || !right || distance(left, right) < faceWidth * 0.03) return null;
+      points.push({ left, right });
+    }
+    const localWidth = Math.max(...points.map(({ left, right }) => Math.abs(left.x - right.x)));
+    if (localWidth < 8) return null;
+    return rms(points.map(({ left, right }) =>
+      Math.hypot(left.x + right.x - 2 * axis, left.y - right.y) / localWidth));
+  }
+
+  const eyeReflection = regionalError(SYMMETRY_PAIRS.slice(0, 4));
+  const eyeOpeningDifference = difference(distance(p[159], p[145]) / leftEyeWidth, distance(p[386], p[374]) / rightEyeWidth);
+  const jawReflection = regionalError([[172, 397]]);
+  const errors = [
+    eyeReflection === null ? null : rms([eyeReflection, eyeError, eyeOpeningDifference]),
+    regionalError(REGIONAL_PAIRS.eyebrows), regionalError(REGIONAL_PAIRS.nose), regionalError(REGIONAL_PAIRS.lips),
+    jawReflection === null ? null : rms([jawReflection, jawError]),
+    regionalError(REGIONAL_PAIRS.chin), regionalError(REGIONAL_PAIRS.cheekbones),
+  ];
+  const regions = Object.fromEntries(SCORING_CRITERIA.map((criterion, i) => [criterion.key,
+    errors[i] === null ? null : roundScore(geometricResponse(errors[i]!, criterion.tolerance) / 10),
+  ])) as Record<(typeof SCORING_CRITERIA)[number]["key"], number | null>;
+  const calibrated = errors.every((error) => error !== null) ? scoreFromErrors(errors as number[]) : null;
+  const score = calibrated?.score ?? null;
+  const components = calibrated?.components ?? [];
+  const potentialRange = estimateCapturePotential(score, {
+    landmarks, width, height, light: captureLight, matrices: faceMatrices,
+  });
 
   const looksmaxing = [
     aspect > 1.45
@@ -122,9 +193,18 @@ export function calculateFaceReport({ faces, width, height }: LandmarkDetection)
   ];
 
   return {
+    calibrationVersion: CALIBRATION_VERSION,
     score,
-    summary: "Índice subjetivo calculado somente pelo equilíbrio de pontos bilaterais nesta imagem. As proporções são descritivas e não aumentam nem reduzem a nota. Não é uma nota científica de beleza.",
-    symmetry: `Erro médio de reflexão: ${percent(mirrorError)} da largura facial, usando 7 pares de pontos e eixo definido por testa, ponte nasal e queixo. Menor erro significa maior equilíbrio nesta projeção, não maior beleza.`,
+    potential: potentialRange?.upper ?? null,
+    potentialRange,
+    regions: {
+      ...regions,
+      skin: presentation.skin,
+      hair: presentation.hair,
+      harmony: score,
+    },
+    summary: "Índice subjetivo das sete regiões geométricas, normalizadas pela própria região. Não é uma nota científica de beleza. Captura insuficiente ou região ausente não recebe uma nota substituta.",
+    symmetry: `Erro RMS de reflexão: ${percent(mirrorError)} da largura facial. A pontuação regional usa a largura da própria região, sem padrão demográfico de proporções.`,
     jawline: `Largura aparente do contorno inferior/largura facial: ${jawRatio.toFixed(2)}. Diferença entre distâncias dos dois lados ao queixo: ${percent(jawError)}. Não estima definição, gordura, ângulo ou estrutura óssea da mandíbula.`,
     eyes: `Diferença relativa das larguras entre cantos dos olhos: ${percent(eyeError)}. Espaço entre cantos internos/largura facial: ${eyeGap.toFixed(2)}. Não mede saúde, visão ou formato ocular ideal.`,
     proportions: `Altura da malha facial/largura: ${aspect.toFixed(2)}. Largura da boca/largura facial: ${mouthRatio.toFixed(2)}. Trecho base do nariz–queixo/altura da malha: ${percent(lowerFraction)}. O topo da malha não é a linha do cabelo.`,
@@ -136,7 +216,7 @@ export function calculateFaceReport({ faces, width, height }: LandmarkDetection)
       "Os pesos e tolerâncias são escolhas transparentes de produto, sem validação científica. Simetria não determina atratividade, saúde ou valor pessoal.",
     ],
     measurements: [
-      { label: "Erro médio de reflexão", value: 100 * mirrorError, unit: "%", method: "Média da distância entre cada ponto e a reflexão do par / largura facial × 100. Pares: 33–263, 133–362, 159–386, 145–374, 234–454, 172–397, 61–291; eixo médio de 10, 168 e 152." },
+      { label: "Erro RMS de reflexão", value: 100 * mirrorError, unit: "%", method: "Raiz da média dos quadrados da distância entre cada ponto e a reflexão do par / largura facial × 100. Pares: 33–263, 133–362, 159–386, 145–374, 234–454, 172–397, 61–291; eixo médio de 10, 168 e 152. As notas usam normalização regional." },
       { label: "Diferença de largura dos olhos", value: 100 * eyeError, unit: "%", method: "|dist(33,133) − dist(362,263)| / maior largura × 100." },
       { label: "Diferença dos lados do contorno mandibular", value: 100 * jawError, unit: "%", method: "|dist(172,152) − dist(397,152)| / maior distância × 100." },
       { label: "Altura/largura da malha facial", value: aspect, unit: "razão", method: "Altura alinhada 10–152 / largura alinhada 234–454; não mede linha do cabelo." },

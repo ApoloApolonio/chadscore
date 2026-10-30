@@ -1,17 +1,77 @@
 @import "tailwindcss";
 
+@theme inline {
+  --font-sans: var(--font-manrope), ui-sans-serif, system-ui, sans-serif;
+}
+
 :root {
   color-scheme: dark;
-  background: #09090b;
-  color: #fafafa;
-  font-family: Arial, Helvetica, sans-serif;
+  background: #070c16;
+  color: #edf3fc;
+  font-family: var(--font-manrope), ui-sans-serif, system-ui, sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
 }
 
 body {
   margin: 0;
+  line-height: 1.6;
 }
 
+button, input, summary { font-family: inherit; }
+
 ::selection {
-  background: #bef264;
-  color: #09090b;
+  background: #8ac3ff;
+  color: #071323;
+}
+
+.app-surface {
+  background:
+    radial-gradient(ellipse at 12% 0%, rgb(41 106 207 / 11%), transparent 46%),
+    radial-gradient(ellipse at 100% 35%, rgb(35 77 152 / 6%), transparent 45%),
+    #070c16;
+}
+
+.glass-card {
+  position: relative;
+  border: 1px solid rgb(147 189 255 / 13%);
+  border-radius: 1.5rem;
+  background:
+    radial-gradient(ellipse at 0% 0%, rgb(155 200 255 / 6%), transparent 65%),
+    linear-gradient(145deg, rgb(23 37 59 / 68%), rgb(12 21 36 / 72%));
+  box-shadow: inset 0 1px 0 rgb(209 231 255 / 6%), 0 12px 36px rgb(0 0 0 / 15%), 0 0 28px rgb(53 127 241 / 4%);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+  transition: border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.glass-card:hover {
+  border-color: rgb(147 189 255 / 24%);
+  box-shadow: inset 0 1px 0 rgb(209 231 255 / 9%), 0 12px 36px rgb(0 0 0 / 18%), 0 0 30px rgb(53 127 241 / 7%);
+}
+
+.glass-card--accent {
+  border-color: rgb(116 175 255 / 25%);
+  background: radial-gradient(ellipse at 0% 0%, rgb(69 141 248 / 11%), transparent 75%), rgb(15 29 49 / 75%);
+}
+
+.primary-button {
+  color: #071323;
+  background: linear-gradient(125deg, #9acfff, #6eafff);
+  border: 1px solid rgb(184 221 255 / 40%);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 25%), 0 4px 24px rgb(70 142 248 / 15%);
+}
+
+.primary-button:not(:disabled):hover {
+  background: linear-gradient(125deg, #b4dcff, #8ac0ff);
+  box-shadow: 0 4px 28px rgb(70 142 248 / 24%);
+}
+
+.blue-focus:focus-visible {
+  outline: 2px solid #93c5fd;
+  outline-offset: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .glass-card { transition: none; }
 }

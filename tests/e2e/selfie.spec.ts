@@ -2,7 +2,11 @@ import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 import sharp from "sharp";
 import { createHash } from "node:crypto";
-import { syntheticDetection } from "../fixtures/landmarks";
+import { syntheticDetection, syntheticFaceMatrix, syntheticLight } from "../fixtures/landmarks";
+import { calculateFaceReport } from "../../src/lib/face-geometry";
+import { classifyPotential, classifyPSL, formatScore } from "../../src/lib/score-classification";
+import { syntheticAppearance } from "../fixtures/appearance";
+import { measureAppearance } from "../../public/appearance-analysis.mjs";
 
 async function syntheticImage() {
   return {
@@ -60,11 +64,11 @@ test("geometria local gera resultados transparentes sem envio nem armazenamento"
   await page.getByRole("checkbox").check();
   await page.getByRole("button", { name: "Analisar meu rosto" }).click();
   await expect(page).toHaveURL(/\/resultados$/);
-  for (const name of ["Simetria facial aparente", "Mandíbula", "Olhos", "Proporções visuais", "Indicadores calculados", "Como a pontuação é calculada"]) {
+  for (const name of ["Notas por região facial", "Olhos", "Sobrancelhas", "Nariz", "Lábios", "Mandíbula", "Queixo", "Maçãs do rosto", "Pele", "Cabelo", "Harmonia facial"]) {
     await expect(page.getByRole("heading", { name, exact: true })).toBeVisible();
   }
-  await expect(page.getByText(/Não é uma nota científica de beleza/)).toBeVisible();
-  await expect(page.locator("img")).toHaveCount(0);
+  await expect(page.getByText(/não uma medida científica de beleza/)).toBeVisible();
+  await expect(page.getByAltText("Miniatura da selfie analisada")).toHaveAttribute("src", /^blob:/);
   expect(uploads).toEqual([]);
   expect(await page.evaluate(() => ({ local: localStorage.length, session: sessionStorage.length })))
     .toEqual({ local: 0, session: 0 });
@@ -112,6 +116,10 @@ test("build serve modelo, runtime, WASM e política do worker para hospedagem Ne
   expect(model.status()).toBe(200);
   expect(createHash("sha256").update(await model.body()).digest("hex"))
     .toBe("64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff");
+  const segmentationModel = await request.get("/mediapipe/selfie_multiclass_256x256.tflite");
+  expect(segmentationModel.status()).toBe(200);
+  expect(createHash("sha256").update(await segmentationModel.body()).digest("hex"))
+    .toBe("c6748b1253a99067ef71f7e26ca71096cd449baefa8f101900ea23016507e0e0");
   for (const variant of ["vision_wasm_internal", "vision_wasm_nosimd_internal"]) {
     const loader = await request.get(`/mediapipe/wasm/${variant}.js`);
     expect(loader.status()).toBe(200);
@@ -121,3 +129,292 @@ test("build serve modelo, runtime, WASM e política do worker para hospedagem Ne
     expect((await wasm.body()).subarray(0, 4)).toEqual(Buffer.from([0, 0x61, 0x73, 0x6d]));
   }
 });
+
+for (const width of [360, 1440]) {
+  test(`pele e cabelo em ${width}px exibem notas calculadas sem alterar a nota geral`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    const detection = syntheticDetection();
+    detection.faces[0][291].y += 0.04;
+    const fixture = syntheticAppearance();
+    detection.appearance = measureAppearance(fixture.image, fixture.masks, fixture.landmarks);
+    const report = calculateFaceReport(detection);
+    expect(report.regions.skin).not.toBeNull();
+    expect(report.regions.hair).not.toBeNull();
+    await mockLocalDetection(page, detection);
+    await page.goto("/");
+    await page.getByLabel("Escolher selfie", { exact: true }).setInputFiles(await syntheticImage());
+    await page.getByRole("checkbox").check();
+    await page.getByRole("button", { name: "Analisar meu rosto" }).click();
+    await expect(page).toHaveURL(/\/resultados$/);
+    await expect(page.getByRole("article", { name: "Pele", exact: true })).toContainText(formatScore(report.regions.skin));
+    await expect(page.getByRole("article", { name: "Cabelo", exact: true })).toContainText(formatScore(report.regions.hair));
+    await expect(page.getByTestId("overall-score")).toHaveText(formatScore(report.score));
+    await expect(page.getByTestId("psl-classification")).toHaveText(classifyPSL(report.score));
+    await expect(page.getByRole("article")).toHaveCount(10);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  });
+}
+
+test("Manrope é servida localmente por next/font e a calibração publicada é identificável", async ({ page }) => {
+  const external: string[] = [];
+  const fonts: number[] = [];
+  page.on("request", (request) => {
+    if (new URL(request.url()).origin !== "http://127.0.0.1:3100") external.push(request.url());
+  });
+  page.on("response", (response) => {
+    if (response.url().includes(".woff2")) fonts.push(response.status());
+  });
+  await page.goto("/");
+  await page.evaluate(() => document.fonts.ready);
+  await expect(page.locator("body")).toHaveCSS("font-family", /Manrope/);
+  await expect(page.locator("html")).toHaveAttribute("data-calibration", "2");
+  await expect(page.locator("html")).toHaveAttribute("data-build", "local");
+  expect(fonts.length).toBeGreaterThan(0);
+  expect(fonts.every((status) => status === 200)).toBe(true);
+  expect(external).toEqual([]);
+});
+
+test("pose sem confiança mostra traços em vez de nota geral e PSL inventados", async ({ page }) => {
+  const detection = syntheticDetection();
+  detection.faceMatrices = [syntheticFaceMatrix(20)];
+  await mockLocalDetection(page, detection);
+  await page.goto("/");
+  await page.getByLabel("Escolher selfie", { exact: true }).setInputFiles(await syntheticImage());
+  await page.getByRole("checkbox").check();
+  await page.getByRole("button", { name: "Analisar meu rosto" }).click();
+  await expect(page).toHaveURL(/\/resultados$/);
+  for (const name of ["overall-score", "psl-classification", "potential-score"]) {
+    await expect(page.getByTestId(name)).toHaveText("—");
+  }
+  await expect(page.getByTestId("potential-label")).toHaveText("Não estimado");
+});
+
+test("worker de produção usa máscaras e pixels locais para pele/cabelo; somente detectores são sintéticos", async ({ page, context }) => {
+  const detection = syntheticDetection();
+  await context.route("**/mediapipe/vision_bundle.js", (route) => route.fulfill({
+    contentType: "application/javascript",
+    body: `self.exports = {
+      FilesetResolver: { forVisionTasks: async () => ({}) },
+      FaceLandmarker: { createFromOptions: async () => ({
+        detect: () => ({ faceLandmarks: ${JSON.stringify(detection.faces)}, facialTransformationMatrixes: ${JSON.stringify([syntheticFaceMatrix()])} }), close() {}
+      }) },
+      ImageSegmenter: { createFromOptions: async () => ({
+        getLabels: () => ['background','hair','body-skin','face-skin','clothes','others'],
+        segment: (image) => {
+          const w=image.width, h=image.height;
+          const categories=new Uint8Array(w*h), skin=new Float32Array(w*h), hair=new Float32Array(w*h);
+          for(let y=0;y<h;y++) for(let x=0;x<w;x++) {
+            const i=y*w+x;
+            if(x>=80&&x<240&&y>=10&&y<100){categories[i]=1;hair[i]=0.95;}
+            else if(x>=65&&x<255&&y>=100&&y<285){categories[i]=3;skin[i]=0.95;}
+          }
+          const mask = (data) => ({width:w,height:h,getAsUint8Array:()=>data,getAsFloat32Array:()=>data});
+          return {categoryMask:mask(categories),confidenceMasks:[mask(skin),mask(hair),mask(skin),mask(skin)],close(){}};
+        }, close() {}
+      }) }
+    };`,
+  }));
+  const fixture = syntheticAppearance();
+  const image = await sharp(fixture.image.data, { raw: { width: fixture.image.width, height: fixture.image.height, channels: 4 } }).png().toBuffer();
+  const requests: {url: string; method: string}[] = [];
+  page.on("request", (r) => requests.push({url: r.url(), method: r.method()}));
+  await page.goto("/");
+  await page.getByLabel("Escolher selfie", { exact: true }).setInputFiles({ name: "synthetic-appearance.png", mimeType: "image/png", buffer: image });
+  await page.getByRole("checkbox").check();
+  await page.getByRole("button", { name: "Analisar meu rosto" }).click();
+  await expect(page).toHaveURL(/\/resultados$/);
+  await expect(page.getByRole("article", { name: "Pele", exact: true }).locator("p")).toHaveText(/^\d{1,2},\d$/);
+  await expect(page.getByRole("article", { name: "Cabelo", exact: true }).locator("p")).toHaveText(/^\d{1,2},\d$/);
+  expect(requests.some((r) => r.url.includes("appearance-analysis.mjs"))).toBe(true);
+  expect(requests.filter((r) => !r.url.startsWith("blob:") && (r.method !== "GET" || new URL(r.url).origin !== "http://127.0.0.1:3100"))).toEqual([]);
+});
+
+test("Image Segmenter real carrega modelo multiclasses e máscaras sem conexão externa", async ({ page, context }) => {
+  test.setTimeout(60_000);
+  const requests: {url: string; method: string}[] = [];
+  context.on("request", (r) => requests.push({url:r.url(),method:r.method()}));
+  await context.route("**/segmentation-smoke.worker.js", (route) => route.fulfill({
+    contentType: "application/javascript",
+    headers: { "Content-Security-Policy": "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'" },
+    body: `self.onmessage=async()=>{
+      let segmenter,result;
+      try {
+        self.exports={};importScripts('/mediapipe/vision_bundle.js');
+        const {ImageSegmenter,FilesetResolver}=self.exports;
+        segmenter=await ImageSegmenter.createFromOptions(await FilesetResolver.forVisionTasks('/mediapipe/wasm'),{
+          baseOptions:{modelAssetPath:'/mediapipe/selfie_multiclass_256x256.tflite',delegate:'CPU'},
+          runningMode:'IMAGE',outputCategoryMask:true,outputConfidenceMasks:true
+        });
+        const canvas=new OffscreenCanvas(256,256);canvas.getContext('2d').fillRect(0,0,256,256);
+        result=segmenter.segment(canvas);
+        self.postMessage({labels:segmenter.getLabels(),categories:result.categoryMask.getAsUint8Array().length,
+          confidence:result.confidenceMasks.length,width:result.categoryMask.width,height:result.categoryMask.height});
+      }catch(error){self.postMessage({error:String(error)});}
+      finally{result?.close();segmenter?.close();self.close();}
+    };`,
+  }));
+  await page.goto("/");
+  const result = await page.evaluate(() => new Promise<{labels?:string[];categories?:number;confidence?:number;width?:number;height?:number;error?:string}>((resolve, reject) => {
+    const worker = new Worker("/segmentation-smoke.worker.js");
+    const timer = setTimeout(() => { worker.terminate(); reject(new Error("Segmentation timeout")); }, 45_000);
+    worker.onerror = () => { clearTimeout(timer); worker.terminate(); reject(new Error("Segmentation worker failed")); };
+    worker.onmessage = ({data}) => { clearTimeout(timer); worker.terminate(); resolve(data); };
+    worker.postMessage("start");
+  }));
+  expect(result.error).toBeUndefined();
+  expect(result.labels).toContain("hair");
+  expect(result.labels).toContain("face-skin");
+  expect(result.confidence).toBe(6);
+  expect(result.categories).toBe(result.width! * result.height!);
+  expect(requests.some((r) => r.url.includes("selfie_multiclass_256x256.tflite"))).toBe(true);
+  expect(requests.filter((r) => !r.url.startsWith("blob:") && (r.method !== "GET" || new URL(r.url).origin !== "http://127.0.0.1:3100"))).toEqual([]);
+});
+
+for (const width of [360, 1440]) {
+  test(`relatório minimalista em ${width}px mostra notas brasileiras, classificação e miniatura somente em memória`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    const detection = syntheticDetection();
+    detection.faces[0][291].y += 0.04;
+    detection.faces[0][362].x += 0.02;
+    const report = calculateFaceReport(detection);
+    expect(report.score).toBeLessThan(10);
+    await page.addInitScript(() => {
+      const revoked: string[] = [];
+      Object.defineProperty(window, "revokedBlobUrls", { value: revoked });
+      const original = URL.revokeObjectURL.bind(URL);
+      URL.revokeObjectURL = (url: string) => { revoked.push(url); original(url); };
+    });
+    await mockLocalDetection(page, detection);
+    await page.goto("/");
+    await page.getByLabel("Escolher selfie", { exact: true }).setInputFiles(await syntheticImage());
+    await page.getByRole("checkbox").check();
+    await page.getByRole("button", { name: "Analisar meu rosto" }).click();
+    await expect(page).toHaveURL(/\/resultados$/);
+    const thumbnail = page.getByAltText("Miniatura da selfie analisada");
+    await expect(thumbnail).toBeVisible();
+    const photoUrl = await thumbnail.getAttribute("src");
+    expect(photoUrl).toMatch(/^blob:/);
+    await expect(page.getByTestId("overall-score")).toHaveText(formatScore(report.score));
+    await expect(page.getByTestId("overall-score")).toHaveText(/^\d{1,2},\d$/);
+    await expect(page.getByTestId("psl-classification")).toHaveText(classifyPSL(report.score));
+    await expect(page.getByTestId("potential-score")).toHaveText("—");
+    await expect(page.getByTestId("potential-label")).toHaveText("Não estimado");
+    await expect(page.getByRole("meter")).toHaveCount(0);
+    await expect(page.locator("svg")).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Como a pontuação é calculada" })).toHaveCount(0);
+    await expect(page.getByRole("article")).toHaveCount(10);
+    for (const name of ["Pele", "Cabelo"]) {
+      await expect(page.getByRole("article", { name, exact: true })).toContainText("—");
+    }
+    for (const [key, name] of [["eyes", "Olhos"], ["eyebrows", "Sobrancelhas"], ["nose", "Nariz"], ["lips", "Lábios"], ["jawline", "Mandíbula"], ["chin", "Queixo"], ["cheekbones", "Maçãs do rosto"], ["harmony", "Harmonia facial"]] as const) {
+      await expect(page.getByRole("article", { name, exact: true })).toContainText(formatScore(report.regions[key]));
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.getByRole("button", { name: "Nova análise", exact: true }).click();
+    await expect(page).toHaveURL("/");
+    expect(await page.evaluate(() => (window as unknown as { revokedBlobUrls: string[] }).revokedBlobUrls)).toContain(photoUrl);
+    await expect(page.getByRole("button", { name: "Analisar meu rosto" })).toBeDisabled();
+    await expect(page.getByAltText("Pré-visualização da selfie selecionada")).toHaveCount(0);
+  });
+}
+
+for (const width of [360, 1440]) {
+  test(`potencial técnico em ${width}px usa qualidade detectada, exibe vírgula e não altera PSL`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    const detection = syntheticDetection();
+    detection.faces[0][291].y += 0.04;
+    detection.faces[0][362].x += 0.02;
+    detection.captureLight = syntheticLight();
+    detection.faceMatrices = [syntheticFaceMatrix(14)];
+    const report = calculateFaceReport(detection);
+    expect(report.potential).not.toBeNull();
+    expect(report.potential!).toBeGreaterThan(report.score!);
+    await mockLocalDetection(page, detection);
+    const uploads: string[] = [];
+    page.on("request", (request) => {
+      if (["POST", "PUT", "PATCH"].includes(request.method())) uploads.push(request.url());
+    });
+    await page.goto("/");
+    await page.getByLabel("Escolher selfie", { exact: true }).setInputFiles(await syntheticImage());
+    await page.getByRole("checkbox").check();
+    await page.getByRole("button", { name: "Analisar meu rosto" }).click();
+    await expect(page).toHaveURL(/\/resultados$/);
+    await expect(page.getByTestId("potential-score")).toHaveText(formatScore(report.potential));
+    await expect(page.getByTestId("potential-score")).toHaveText(/^\d{1,2},\d$/);
+    await expect(page.getByTestId("potential-label")).toHaveText(classifyPotential(report.potential));
+    await expect(page.getByTestId("psl-classification")).toHaveText(classifyPSL(report.score));
+    await expect(page.getByTestId("overall-score")).toHaveText(formatScore(report.score));
+    await expect(page.locator("#potential-note")).toContainText("não garante melhoria");
+    await expect(page.getByRole("meter")).toHaveCount(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    expect(uploads).toEqual([]);
+  });
+}
+
+test("worker real calcula luz dos pixels locais; detector substituído apenas neste teste de integração", async ({ page, context }) => {
+  const detection = syntheticDetection();
+  detection.faces[0][291].y += 0.04;
+  detection.faces[0][362].x += 0.02;
+  // Mantém o worker, canvas e sampler reais. Apenas a saída do detector é sintética.
+  await context.route("**/mediapipe/vision_bundle.js", (route) => route.fulfill({
+    contentType: "application/javascript",
+    body: `self.exports = {
+      FilesetResolver: { forVisionTasks: async () => ({}) },
+      FaceLandmarker: { createFromOptions: async () => ({
+        detect: () => ({ faceLandmarks: ${JSON.stringify(detection.faces)}, facialTransformationMatrixes: ${JSON.stringify([syntheticFaceMatrix(14)])} }),
+        close() {}
+      }) }
+    };`,
+  }));
+  const requests: { url: string; method: string }[] = [];
+  page.on("request", (request) => requests.push({ url: request.url(), method: request.method() }));
+  await page.goto("/");
+  await page.getByLabel("Escolher selfie", { exact: true }).setInputFiles(await syntheticImage());
+  await page.getByRole("checkbox").check();
+  await page.getByRole("button", { name: "Analisar meu rosto" }).click();
+  await expect(page).toHaveURL(/\/resultados$/);
+  await expect(page.getByTestId("potential-score")).toHaveText(/^\d{1,2},\d$/);
+  expect(requests.some((r) => r.url.includes("capture-light.mjs"))).toBe(true);
+  expect(requests.filter((r) => !r.url.startsWith("blob:") &&
+    (r.method !== "GET" || new URL(r.url).origin !== "http://127.0.0.1:3100"))).toEqual([]);
+});
+
+for (const width of [360, 1440]) {
+  test(`tema azul e cards glass em ${width}px preservam fluxo local e pele com confiança moderada`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    const fixture = syntheticAppearance();
+    fixture.masks.skin.fill(0.74);
+    const detection = syntheticDetection();
+    detection.appearance = measureAppearance(fixture.image, fixture.masks, fixture.landmarks);
+    const expected = calculateFaceReport(detection);
+    expect(expected.regions.skin).not.toBeNull();
+    await mockLocalDetection(page, detection);
+    const uploads: string[] = [];
+    page.on("request", (request) => {
+      if (["POST", "PUT", "PATCH"].includes(request.method())) uploads.push(request.url());
+    });
+    await page.goto("/");
+    await expect(page.getByRole("heading", { level: 1, name: "ChadScore" })).toBeVisible();
+    await expect(page.locator("main")).toHaveCSS("background-color", "rgb(7, 12, 22)");
+    await expect(page.locator("#selfie-panel .glass-card")).toHaveCSS("backdrop-filter", "blur(16px)");
+    await expect(page.getByRole("link", { name: "Escolher minha selfie" })).toHaveAttribute("href", "#selfie-panel");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.getByLabel("Escolher selfie", { exact: true }).setInputFiles(await syntheticImage());
+    await page.getByRole("checkbox").check();
+    await page.getByRole("button", { name: "Analisar meu rosto" }).click();
+    await expect(page).toHaveURL(/\/resultados$/);
+    await expect(page.locator(".glass-card")).toHaveCount(13);
+    await expect(page.getByRole("article", { name: "Pele", exact: true })).toContainText(formatScore(expected.regions.skin));
+    await expect(page.getByTestId("overall-score")).toHaveText(formatScore(expected.score));
+    await expect(page.getByTestId("psl-classification")).toHaveText(classifyPSL(expected.score));
+    await expect(page.getByTestId("overall-score")).toHaveClass(/text-blue-300/);
+    for (const card of await page.locator(".glass-card").all()) {
+      await expect(card).toHaveCSS("border-radius", "24px");
+      await expect(card).toHaveCSS("backdrop-filter", "blur(16px)");
+      await expect(card).toHaveCSS("background-image", /gradient/);
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    expect(uploads).toEqual([]);
+  });
+}

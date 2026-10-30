@@ -2,135 +2,105 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ESTIMATE_NOTICE } from "@/lib/analysis-schema";
+import { classifyPotential, classifyPSL, formatScore } from "@/lib/score-classification";
 import { useAnalysisSession } from "./analysis-session";
 
-const sections = [
-  ["symmetry", "Simetria facial aparente"],
-  ["jawline", "Mandíbula"],
-  ["eyes", "Olhos"],
-  ["proportions", "Proporções visuais"],
+const regions = [
+  ["eyes", "Olhos"], ["eyebrows", "Sobrancelhas"], ["nose", "Nariz"],
+  ["lips", "Lábios"], ["jawline", "Mandíbula"], ["chin", "Queixo"],
+  ["cheekbones", "Maçãs do rosto"], ["skin", "Pele"], ["hair", "Cabelo"],
+  ["harmony", "Harmonia facial"],
 ] as const;
 
+const focus = "blue-focus";
+
 export function AnalysisResults() {
-  const { report, setReport } = useAnalysisSession();
+  const { report, photoUrl, clearAnalysis } = useAnalysisSession();
   const router = useRouter();
 
   function startAgain() {
-    setReport(null);
+    clearAnalysis();
     router.replace("/");
   }
 
   return (
-    <main className="min-h-svh bg-zinc-950 px-6 pb-12">
-      <header className="mx-auto flex w-full max-w-6xl items-center justify-between py-8">
-        <Link href="/" onClick={() => setReport(null)} className="text-lg font-bold tracking-tight">
-          Chad<span className="text-lime-300">Score</span>
+    <main className="app-surface min-h-svh px-5 pb-10 sm:px-8">
+      <header className="mx-auto flex max-w-4xl items-center justify-between border-b border-blue-200/8 py-6">
+        <Link href="/" onClick={clearAnalysis} className={`rounded text-sm font-semibold tracking-tight text-slate-200 ${focus}`}>
+          Chad<span className="text-blue-300">Score.</span>
         </Link>
-        <span className="rounded-full border border-zinc-800 px-3 py-1 text-xs text-zinc-400">MediaPipe · Local</span>
+        <span className="text-[10px] tracking-widest text-slate-400 uppercase">Local · MediaPipe</span>
       </header>
 
       {!report ? (
-        <section className="mx-auto max-w-xl py-24 text-center">
-          <h1 className="text-3xl font-bold tracking-tight">Nenhum relatório nesta sessão</h1>
-          <p className="mt-5 leading-relaxed text-zinc-400">
-            Para proteger sua privacidade, o relatório fica apenas na memória desta
-            aba. Ao atualizar ou fechar a página, ele é descartado.
-          </p>
-          <Link href="/" className="mt-8 inline-block rounded-xl bg-lime-300 px-6 py-3 font-semibold text-zinc-950">
-            Escolher uma selfie
-          </Link>
+        <section className="mx-auto max-w-md py-24 text-center">
+          <h1 className="text-2xl font-medium tracking-tight">Nenhum relatório nesta sessão</h1>
+          <p className="mt-4 text-sm leading-relaxed text-slate-400">O resultado e a miniatura são descartados ao atualizar ou fechar a página.</p>
+          <Link href="/" className={`primary-button mt-7 inline-block rounded-xl px-5 py-3 text-sm font-medium ${focus}`}>Escolher uma selfie</Link>
         </section>
       ) : (
-        <div className="mx-auto max-w-3xl py-10">
-          <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">Um novo olhar, <span className="text-lime-300">não um veredito.</span></h1>
-          <p className="mt-5 text-sm leading-relaxed text-zinc-400">{ESTIMATE_NOTICE}</p>
-
-          <section aria-labelledby="score-heading" className="mt-8 rounded-2xl border border-lime-300/20 bg-lime-300/5 p-6 sm:p-8">
-            <h2 id="score-heading" className="text-sm font-medium text-lime-300">Índice subjetivo de equilíbrio 2D</h2>
-            <p className="mt-4 text-6xl font-bold tracking-tighter text-lime-300">
-              {report.score}<span className="text-xl font-normal text-zinc-400"> / 100</span>
-            </p>
-            <p className="mt-5 leading-relaxed text-zinc-300">{report.summary}</p>
-            <p className="mt-4 text-xs text-zinc-400">Não é uma nota de beleza, percentil ou ranking entre pessoas. Um índice de 100 só indica equilíbrio nos critérios escolhidos.</p>
-          </section>
-
-          <div className="mt-6 grid gap-4 sm:grid-cols-2">
-            {sections.map(([key, title]) => (
-              <section key={key} className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-6">
-                <h2 className="font-semibold text-lime-300">{title}</h2>
-                <p className="mt-3 text-sm leading-relaxed text-zinc-300">{report[key]}</p>
-              </section>
-            ))}
+        <div className="mx-auto max-w-4xl py-10 sm:py-14">
+          <div className="flex items-center gap-5">
+            {photoUrl && (
+              // URL blob local: sem otimização no servidor ou envio da foto.
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={photoUrl} alt="Miniatura da selfie analisada" width={72} height={88} className="h-22 w-18 shrink-0 rounded-2xl border border-blue-200/15 object-cover shadow-lg shadow-blue-950/20" />
+            )}
+            <div>
+              <p className="text-[10px] tracking-[0.2em] text-blue-300 uppercase">ChadScore</p>
+              <h1 className="mt-2 text-2xl font-medium tracking-tight sm:text-3xl">Seu resultado</h1>
+            </div>
           </div>
 
-          <section className="mt-6 rounded-2xl border border-zinc-800 bg-zinc-900/40 p-6">
-            <h2 className="text-lg font-semibold">Indicadores calculados</h2>
-            <p className="mt-2 text-xs leading-relaxed text-zinc-400">
-              Coordenadas normalizadas são convertidas em pixels para respeitar a
-              proporção da foto. O eixo horizontal é alinhado pelos cantos externos
-              dos olhos. Distâncias e larguras são apenas projeções 2D, sem unidades físicas.
-            </p>
-            <dl className="mt-5 space-y-5">
-              {report.measurements.map((measurement) => (
-                <div key={measurement.label}>
-                  <dt className="text-sm text-zinc-300">{measurement.label}</dt>
-                  <dd className="mt-1 font-semibold text-lime-300">
-                    {measurement.value.toLocaleString("pt-BR", { maximumFractionDigits: measurement.unit === "%" ? 1 : 2 })}
-                    {measurement.unit === "%" ? "%" : " (razão)"}
-                  </dd>
-                  <dd className="mt-1 text-xs leading-relaxed text-zinc-500">{measurement.method}</dd>
-                </div>
-              ))}
-            </dl>
-          </section>
-
-          <section className="mt-6 rounded-2xl border border-lime-300/20 p-6">
-            <h2 className="text-lg font-semibold">Como a pontuação é calculada</h2>
-            <p className="mt-3 text-sm leading-relaxed text-zinc-400">
-              Cada componente = 100 × máximo(0, 1 − erro/tolerância).
-              Nota final = soma dos componentes × seus pesos, arredondada.
-              Pesos e tolerâncias abaixo são escolhas subjetivas do projeto,
-              não limites biológicos ou ideais de beleza. As outras proporções não entram na nota.
-            </p>
-            <ul className="mt-4 space-y-4 text-sm text-zinc-300">
-              {report.scoreComponents.map((component) => (
-                <li key={component.label}>
-                  <p className="font-medium">{component.label} · peso {Math.round(component.weight * 100)}%</p>
-                  <p className="mt-1 text-xs text-zinc-400">
-                    Erro {(100 * component.error).toFixed(2)}% · tolerância {(100 * component.tolerance).toFixed(0)}% · componente {component.score.toFixed(1)}/100
-                  </p>
-                </li>
-              ))}
-            </ul>
-            <p className="mt-4 text-xs leading-relaxed text-zinc-500">
-              Na reflexão, o erro é normalizado pela largura facial. Nos olhos e no
-              contorno mandibular, é a diferença absoluta dividida pelo maior dos dois comprimentos.
-            </p>
-          </section>
-
-          <section className="mt-6 rounded-2xl border border-zinc-800 bg-zinc-900/40 p-6">
-            <h2 className="text-lg font-semibold">Looksmaxing: estilo e autocuidado</h2>
-            <p className="mt-2 text-xs text-zinc-400">Sugestões opcionais e não invasivas, sem promessas de mudança na nota.</p>
-            <ul className="mt-4 list-disc space-y-3 pl-5 text-sm leading-relaxed text-zinc-300 marker:text-lime-300">
-              {report.looksmaxing.map((suggestion, index) => <li key={index}>{suggestion}</li>)}
-            </ul>
-          </section>
-
-          <section className="mt-6 rounded-2xl border border-zinc-800 p-6">
-            <h2 className="font-semibold">Limitações desta análise</h2>
-            <ul className="mt-3 list-disc space-y-2 pl-5 text-sm leading-relaxed text-zinc-400">
-              {report.limitations.map((limitation, index) => <li key={index}>{limitation}</li>)}
-            </ul>
-          </section>
-
-          <p className="mt-6 text-xs leading-relaxed text-zinc-500">
-            Nenhuma foto foi incluída neste relatório. O resultado não é salvo pelo
-            ChadScore e desaparecerá ao atualizar ou fechar a página.
+          <dl className="mt-9 grid grid-cols-2 gap-3 sm:mt-10 sm:grid-cols-3 sm:gap-4">
+            <div className="glass-card p-5 sm:p-6">
+              <dt className="text-xs text-slate-400">Classificação PSL</dt>
+              <dd data-testid="psl-classification" className="mt-4 text-2xl font-medium tracking-tight text-blue-300 sm:text-3xl">{classifyPSL(report.score)}</dd>
+            </div>
+            <div className="glass-card p-5 sm:p-6">
+              <dt className="text-xs text-slate-400">Potencial</dt>
+              <dd className="mt-4 flex items-baseline gap-1.5" aria-describedby="potential-note">
+                <span data-testid="potential-score" className={`text-3xl font-medium tracking-tight tabular-nums ${report.potential === null ? "text-slate-500" : "text-blue-300"}`}>{formatScore(report.potential)}</span>
+                {report.potential !== null && <span className="text-[10px] text-slate-400">/ 10,0</span>}
+              </dd>
+              <dd data-testid="potential-label" className="mt-1.5 text-xs text-slate-400">{classifyPotential(report.potential)}</dd>
+            </div>
+            <div className="glass-card glass-card--accent col-span-2 p-5 sm:col-span-1 sm:p-6">
+              <dt className="text-xs text-slate-400">Nota geral unificada</dt>
+              <dd className="mt-3 flex items-baseline gap-2">
+                <span data-testid="overall-score" className="text-5xl font-semibold tracking-[-0.045em] text-blue-300 tabular-nums">{formatScore(report.score)}</span>
+                {report.score !== null && <span className="text-xs text-slate-400">/ 10,0</span>}
+              </dd>
+            </div>
+          </dl>
+          <p id="potential-note" className="mt-4 max-w-xl text-[11px] leading-relaxed text-slate-400">
+            {report.potentialRange
+              ? `Potencial: cenário superior de captura (variação ${formatScore(report.potentialRange.lower)}–${formatScore(report.potentialRange.upper)}). A nota pode subir ou cair; não garante melhoria nem prevê beleza futura.`
+              : "Potencial não estimado: faltam dados confiáveis de luz ou pose. Não é uma previsão de beleza futura."}
           </p>
-          <button type="button" onClick={startAgain} className="mt-6 cursor-pointer rounded-xl bg-lime-300 px-6 py-3 text-sm font-semibold text-zinc-950 hover:bg-lime-200 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-lime-300">
-            Descartar relatório e voltar
-          </button>
+
+          <section aria-labelledby="regions-heading" className="mt-10">
+            <h2 id="regions-heading" className="text-sm font-medium text-slate-300">Notas por região facial</h2>
+            <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+              {regions.map(([key, name]) => (
+                <article key={key} aria-label={name} className="glass-card flex min-h-28 flex-col justify-between gap-5 p-4 sm:p-5">
+                  <h3 className="text-xs leading-relaxed text-slate-400">{name}</h3>
+                  <p className={`text-2xl font-medium tracking-tight tabular-nums ${report.regions[key] === null ? "text-slate-500" : "text-blue-200"}`} aria-label={`${name}: ${report.regions[key] === null ? "não avaliado" : formatScore(report.regions[key])}`}>
+                    {formatScore(report.regions[key])}
+                  </p>
+                </article>
+              ))}
+            </div>
+          </section>
+
+          <footer className="mt-6 flex flex-col items-start justify-between gap-5 sm:flex-row sm:items-center">
+            <p className="max-w-lg text-[11px] leading-relaxed text-slate-400">
+              Notas subjetivas, não uma medida científica de beleza. Pele e cabelo: apresentação na foto, não saúde ou cor natural. PSL usa apenas geometria. — Captura ou região sem confiança suficiente.
+            </p>
+            <button type="button" onClick={startAgain} className={`primary-button shrink-0 cursor-pointer rounded-xl px-4 py-3 text-xs font-medium transition-colors ${focus}`}>
+              Nova análise
+            </button>
+          </footer>
         </div>
       )}
     </main>

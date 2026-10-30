@@ -1,18 +1,49 @@
 "use client";
 
-import { createContext, useContext, useState } from "react";
-import type { Dispatch, ReactNode, SetStateAction } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import type { FaceReport } from "@/lib/analysis-schema";
 
+type Session = { report: FaceReport; photoUrl: string };
 const AnalysisContext = createContext<{
   report: FaceReport | null;
-  setReport: Dispatch<SetStateAction<FaceReport | null>>;
+  photoUrl: string | null;
+  completeAnalysis: (report: FaceReport, photo: File) => void;
+  clearAnalysis: () => void;
 } | null>(null);
 
-/** Somente relatório em memória; nunca guarda a imagem ou usa Web Storage. */
+/** Miniatura e relatório somente em memória, sem Web Storage, upload ou persistência. */
 export function AnalysisSessionProvider({ children }: { children: ReactNode }) {
-  const [report, setReport] = useState<FaceReport | null>(null);
-  return <AnalysisContext.Provider value={{ report, setReport }}>{children}</AnalysisContext.Provider>;
+  const [session, setSession] = useState<Session | null>(null);
+  const photoRef = useRef<string | null>(null);
+
+  const clearAnalysis = useCallback(() => {
+    if (photoRef.current) URL.revokeObjectURL(photoRef.current);
+    photoRef.current = null;
+    setSession(null);
+  }, []);
+
+  const completeAnalysis = useCallback((report: FaceReport, photo: File) => {
+    const photoUrl = URL.createObjectURL(photo);
+    if (photoRef.current) URL.revokeObjectURL(photoRef.current);
+    photoRef.current = photoUrl;
+    setSession({ report, photoUrl });
+  }, []);
+
+  useEffect(() => () => {
+    if (photoRef.current) URL.revokeObjectURL(photoRef.current);
+  }, []);
+
+  return (
+    <AnalysisContext.Provider value={{
+      report: session?.report ?? null,
+      photoUrl: session?.photoUrl ?? null,
+      completeAnalysis,
+      clearAnalysis,
+    }}>
+      {children}
+    </AnalysisContext.Provider>
+  );
 }
 
 export function useAnalysisSession() {

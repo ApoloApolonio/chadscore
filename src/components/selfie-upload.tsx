@@ -17,7 +17,7 @@ export function SelfieUpload() {
   const [error, setError] = useState("");
   const [consent, setConsent] = useState(false);
   const router = useRouter();
-  const { setReport } = useAnalysisSession();
+  const { completeAnalysis, clearAnalysis } = useAnalysisSession();
   const abortRef = useRef<AbortController | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const operation = useRef(0);
@@ -45,7 +45,7 @@ export function SelfieUpload() {
     setSelection(null);
     setError("");
     setConsent(false);
-    setReport(null);
+    clearAnalysis();
     setIsValidating(true);
     setIsAnalyzing(false);
 
@@ -82,13 +82,13 @@ export function SelfieUpload() {
     const currentOperation = ++operation.current;
     setIsAnalyzing(true);
     setError("");
-    setReport(null);
+    clearAnalysis();
     const controller = new AbortController();
     abortRef.current = controller;
     try {
       const result = await faceAnalysisProvider.analyze(selection.file, consent, controller.signal);
       if (currentOperation === operation.current) {
-        setReport(result.report);
+        completeAnalysis(result.report, selection.file);
         setSelection(null);
         setConsent(false);
         router.push("/resultados");
@@ -107,16 +107,10 @@ export function SelfieUpload() {
   }
 
   return (
-    <form onSubmit={handleAnalyze} className="mt-10 w-full max-w-md">
-      <div className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-5 sm:p-6">
-        <label htmlFor="selfie" className="block text-sm font-medium text-zinc-100">
-          {selection ? "Trocar selfie" : "Escolher selfie"}
-        </label>
-        <p id="selfie-help" className="mt-2 text-xs leading-relaxed text-zinc-400">
-          JPG, PNG ou WebP · Até 5 MB.
-          <br />
-          Prefira uma foto de frente, com boa iluminação e apenas você.
-        </p>
+    <form id="selfie-panel" onSubmit={handleAnalyze} className="w-full scroll-mt-8">
+      <div className="glass-card p-5 sm:p-7">
+        <p className="text-[10px] tracking-[0.2em] text-blue-300 uppercase">Comece por aqui</p>
+        <h2 className="mt-2 text-xl font-medium tracking-tight text-slate-100">Sua selfie, seu controle.</h2>
         <input
           ref={inputRef}
           id="selfie"
@@ -127,8 +121,18 @@ export function SelfieUpload() {
           disabled={isAnalyzing}
           aria-describedby="selfie-help selfie-privacy selfie-error"
           aria-invalid={Boolean(error)}
-          className="mt-5 block w-full min-w-0 rounded-lg border border-zinc-700 p-2 text-xs text-zinc-400 file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-zinc-800 file:px-3 file:py-2 file:text-xs file:font-medium file:text-zinc-100 hover:file:bg-zinc-700 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-lime-300 disabled:opacity-50"
+          className="peer sr-only"
         />
+        <label htmlFor="selfie" className={`mt-5 flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-blue-300/25 bg-blue-300/3 px-4 text-center text-sm font-medium text-blue-200 transition-colors peer-focus-visible:outline-2 peer-focus-visible:outline-offset-4 peer-focus-visible:outline-blue-300 ${selection ? "min-h-24" : "min-h-40"} ${isAnalyzing ? "cursor-wait opacity-50" : "cursor-pointer hover:border-blue-300/50 hover:bg-blue-300/6"}`}>
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" className="size-7 text-blue-300">
+            <path d="M12 16V4m-4 4 4-4 4 4M5 14v5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-5" />
+          </svg>
+          {selection ? "Trocar selfie" : "Escolher selfie"}
+        </label>
+        <p id="selfie-help" className="mt-3 text-center text-[11px] leading-relaxed text-slate-400">
+          JPG, PNG ou WebP · Até 5 MB.<br />
+          De frente, com boa luz e apenas você.
+        </p>
 
         {selection && (
           <div className="mt-5">
@@ -137,15 +141,15 @@ export function SelfieUpload() {
             <img
               src={selection.url}
               alt="Pré-visualização da selfie selecionada"
-              className="mx-auto h-64 w-full rounded-xl bg-zinc-950 object-contain"
+              className="mx-auto h-56 w-full rounded-2xl border border-blue-200/10 bg-slate-950/60 object-contain"
             />
-            <p className="mt-3 break-all text-xs text-zinc-400">
+            <p className="mt-3 break-all text-xs text-slate-400">
               {selection.file.name}
             </p>
             <button
               type="button"
               onClick={removeSelfie}
-              className="mt-3 rounded px-2 py-1 text-xs text-zinc-300 underline underline-offset-4 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-lime-300"
+              className="blue-focus mt-3 rounded px-2 py-1 text-xs text-blue-200 underline underline-offset-4 hover:text-blue-100"
             >
               Remover foto
             </button>
@@ -155,10 +159,11 @@ export function SelfieUpload() {
         <p id="selfie-error" role="alert" className="mt-3 text-sm text-red-300">
           {error}
         </p>
-        <p className="mt-3 text-left text-xs leading-relaxed text-zinc-400">
-          {ESTIMATE_NOTICE}
-        </p>
-        <label className="mt-5 flex items-start gap-3 text-left text-xs leading-relaxed text-zinc-300">
+        <details className="mt-4 border-t border-blue-200/8 pt-4 text-xs text-slate-400">
+          <summary className="blue-focus w-fit cursor-pointer rounded text-blue-200">Como interpretar as notas</summary>
+          <p className="mt-3 leading-relaxed">{ESTIMATE_NOTICE}</p>
+        </details>
+        <label className="mt-5 flex items-start gap-3 text-left text-xs leading-relaxed text-slate-300">
           <input
             type="checkbox"
             checked={consent}
@@ -166,19 +171,18 @@ export function SelfieUpload() {
             disabled={!selection || isAnalyzing}
             required
             aria-describedby="selfie-privacy"
-            className="mt-0.5 size-4 shrink-0 accent-lime-300 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-lime-300"
+            className="blue-focus mt-0.5 size-4 shrink-0 accent-blue-400"
           />
           <span>
-            Tenho 18 anos ou mais, esta selfie é minha e concordo com o
-            processamento somente neste navegador. Entendo que os indicadores e a
-            nota são limitados e não medem beleza científica.
+            Tenho 18 anos ou mais, esta selfie é minha e autorizo a análise local.
+            Entendo que as notas são subjetivas, não científicas.
           </span>
         </label>
         <button
           type="submit"
           disabled={!selection || !consent || isValidating || isAnalyzing}
           aria-describedby="analysis-status"
-          className="mt-3 w-full rounded-xl bg-lime-300 px-7 py-4 text-sm font-semibold text-zinc-950 transition-colors enabled:cursor-pointer enabled:hover:bg-lime-200 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-lime-300 disabled:cursor-not-allowed disabled:opacity-50"
+          className="primary-button blue-focus mt-5 w-full rounded-xl px-7 py-4 text-sm font-semibold transition-colors enabled:cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
         >
           {isValidating
             ? "Validando imagem…"
@@ -189,21 +193,19 @@ export function SelfieUpload() {
         <p
           id="analysis-status"
           role="status"
-          className="mt-4 text-xs leading-relaxed text-zinc-400"
+          className="mt-4 text-center text-[11px] leading-relaxed text-slate-400"
         >
           {isValidating
             ? "Verificando se a imagem pode ser aberta…"
             : isAnalyzing
               ? "Carregando o modelo local e detectando pontos faciais. Isso pode levar alguns segundos…"
-              : "Grátis e local: nenhuma foto é enviada. Clique para iniciar o MediaPipe."}
+              : "Gratuito. Sem envio da selfie. Processado neste navegador."}
         </p>
       </div>
-      <p id="selfie-privacy" className="mt-4 text-xs leading-relaxed text-zinc-500">
-        Sua foto e os pontos faciais ficam somente na memória deste navegador,
-        sem envio a servidores ou armazenamento. O navegador baixa apenas os
-        arquivos estáticos do modelo na mesma origem do site. Remover a foto
-        interrompe o processamento. O relatório também fica apenas na memória
-        desta aba e é descartado ao atualizar ou fechar a página.
+      <p id="selfie-privacy" className="mt-4 px-1 text-[11px] leading-relaxed text-slate-400">
+        Foto e resultados ficam só na memória desta aba, sem envio ou armazenamento.
+        O navegador baixa apenas os modelos estáticos. Remover a foto cancela a análise;
+        atualizar ou fechar a página descarta a sessão.
       </p>
     </form>
   );

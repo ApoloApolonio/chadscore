@@ -6,7 +6,25 @@ export const ESTIMATE_NOTICE =
 const description = z.string().min(1).max(1200);
 
 export const ReportSchema = z.strictObject({
-  score: z.number().int().min(0).max(100),
+  calibrationVersion: z.literal("2"),
+  score: z.number().min(0).max(10).nullable(),
+  potential: z.number().min(0).max(10).nullable(),
+  potentialRange: z.object({
+    lower: z.number().min(0).max(10),
+    upper: z.number().min(0).max(10),
+  }).nullable(),
+  regions: z.strictObject({
+    eyes: z.number().min(0).max(10).nullable(),
+    eyebrows: z.number().min(0).max(10).nullable(),
+    nose: z.number().min(0).max(10).nullable(),
+    lips: z.number().min(0).max(10).nullable(),
+    jawline: z.number().min(0).max(10).nullable(),
+    chin: z.number().min(0).max(10).nullable(),
+    cheekbones: z.number().min(0).max(10).nullable(),
+    skin: z.number().min(0).max(10).nullable(),
+    hair: z.number().min(0).max(10).nullable(),
+    harmony: z.number().min(0).max(10).nullable(),
+  }),
   summary: description,
   symmetry: description,
   jawline: description,
@@ -26,13 +44,17 @@ export const ReportSchema = z.strictObject({
     error: z.number().min(0),
     tolerance: z.number().positive(),
     score: z.number().min(0).max(100),
-  })).length(3),
+  })).max(7),
 });
 
 export const LandmarkResultSchema = z.object({
   faces: z.array(z.array(z.object({ x: z.number(), y: z.number() })).min(468).max(478)).max(2),
   width: z.number().int().positive().max(1280),
   height: z.number().int().positive().max(1280),
+  // Estatísticas opcionais: erro/ausência não deve inutilizar a análise geométrica.
+  captureLight: z.unknown().optional(),
+  faceMatrices: z.unknown().optional(),
+  appearance: z.unknown().optional(),
 });
 
 export const SuccessResponseSchema = z.strictObject({

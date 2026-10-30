@@ -1,114 +1,127 @@
 # ChadScore
 
-Next.js, TypeScript e Tailwind CSS. Análise gratuita com **MediaPipe Face Landmarker, inteiramente no navegador**, sem chave, backend de análise ou API paga.
+Next.js, TypeScript, Tailwind CSS e **MediaPipe local e gratuito**. Interface azul/glass minimalista, com Manrope via `next/font`. Sem conta, chave, backend de upload ou API paga para analisar selfies.
 
-## Executar localmente
+## Executar e validar
 
-Requisitos: Node.js 20.9+ (LTS atual recomendado), npm e navegador atualizado com WebAssembly, Web Workers, `createImageBitmap` e `OffscreenCanvas`.
+Requisitos: Node.js LTS suportado pelo Next.js (recomendado 24.x), npm e navegador atualizado com WebAssembly, Web Worker, `createImageBitmap` e `OffscreenCanvas`.
 
 ```bash
-npm install
+npm ci
 npm run dev
 ```
 
-Abra http://localhost:3000. No PowerShell, use `npm.cmd` se a política de scripts bloquear `npm.ps1`.
+Abra http://localhost:3000. No PowerShell, use `npm.cmd` se `npm.ps1` estiver bloqueado.
 
-`predev` e `prebuild` executam `npm run prepare:models`. Esse script copia o runtime/WASM do pacote fixado `@mediapipe/tasks-vision@0.10.21` e baixa uma única vez o modelo público Face Landmarker float16 **v1** para `public/mediapipe/`. Essa versão não realiza a chamada de telemetria observada na versão 1.2.0. O SHA-256 é verificado antes do uso:
-
-```text
-64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff
+```bash
+npm test
+npm run lint
+npm run build
+npm run typecheck
+npx playwright install chromium
+npm run test:e2e
 ```
 
-A preparação inicial requer internet para baixar o modelo do Google, mas **não envia imagens** e não exige conta/chave. Os arquivos gerados ficam ignorados no Git. Depois de preparados, dev/build não precisam baixar o modelo novamente; no navegador, todos os arquivos de inferência são servidos pela mesma origem do site, sem CDN ou chamada externa. Se um download falhar, execute novamente `npm run prepare:models`. Um arquivo local com hash incorreto deve ser removido especificamente antes de refazer o download.
+Os testes E2E iniciam um servidor de produção local isolado em `127.0.0.1:3100`. Para um Chrome/Chromium existente, defina `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`. Screenshots, vídeos e traces estão desativados. Imagens de teste são procedurais e geradas em memória, sem fotografias humanas ou chamadas pagas.
 
-## Comandos
+`predev` e `prebuild` executam `npm run prepare:models`. O build inicial baixa os modelos públicos e a fonte Manrope; no navegador, todos são servidos pela mesma origem. Não é necessário `.env.local`.
 
-- `npm run prepare:models`: prepara/verifica modelo e arquivos WASM locais.
-- `npm run dev`: desenvolvimento (prepara os arquivos automaticamente).
-- `npm run build`: build de produção (também prepara os arquivos).
-- `npm start`: executa o build localmente.
-- `npm run lint`: ESLint.
-- `npm run typecheck`: TypeScript.
-- `npm test`: testes de validação, geometria, pontuação e ciclo de vida do worker.
-- `npm run test:e2e`: testes no navegador após build e `npx playwright install chromium`. Alternativamente, defina `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` para um Chrome/Chromium instalado. Inicia servidor isolado em `127.0.0.1:3100`; não grava screenshots, vídeos ou traces.
+## Modelos fixados e assets
 
-Não é necessário criar `.env.local`. A antiga rota de upload e a integração com provedor pago foram removidas. Não há fallback de pontuações ou medições fictícias.
+Runtime `@mediapipe/tasks-vision@0.10.21`, sem a telemetria observada na versão 1.2.0. O script copia runtime e WASM para `public/mediapipe/` e verifica estes hashes antes de utilizar os modelos:
 
-## Preparação para a Vercel
-
-O `vercel.json` fixa o preset Next.js, instalação com `npm ci` e **Build Command `npm run build`**. Isso garante que o hook `prebuild` gere os arquivos em `public/mediapipe/` antes do Next.js compilar, inclusive em um checkout novo sem esses arquivos ignorados. Não substitua esse comando por `next build` diretamente: isso pularia a preparação do modelo.
-
-Na importação do repositório, use a raiz do projeto, uma versão Node.js LTS suportada (recomendada: 24.x) e deixe o Output Directory no padrão do Next.js. Não são necessárias variáveis secretas, funções de análise ou APIs pagas. O ambiente de build precisa de acesso HTTPS ao Google Storage para baixar o modelo público; uma falha ou hash divergente interrompe o build, em vez de publicar arquivos incompletos.
-
-O worker, o runtime, os dois loaders/WASM (SIMD e fallback) e o modelo `.task` são arquivos estáticos de `public/`, servidos pela origem HTTPS da implantação. Não precisam estar no Git nem ser escritos em disco durante uma requisição. Os headers de segurança do worker são definidos em `next.config.ts`. Os testes E2E verificam HTTP 200, conteúdo do modelo, MIME do WASM e CSP no servidor de produção local.
-
-A inferência usa CPU/WASM em um worker normal, não threads compartilhadas: não depende de GPU, COOP/COEP ou de uma função serverless que receba a selfie. A compatibilidade final depende do navegador do visitante. A validação local não equivale a um deploy real na Vercel; nenhum comando de deploy é necessário para testar o projeto. Se a integração Git da Vercel já estiver conectada, um push pode disparar o deploy automático conforme as configurações dessa conta.
-
-## Fluxo e privacidade
-
-1. O usuário seleciona uma selfie JPG, PNG ou WebP de até 5 MB e 16 megapixels. Tipo, assinatura e leitura da imagem são verificados localmente.
-2. A pré-visualização usa uma URL `blob:` temporária. O usuário confirma ser titular da selfie, ter 18 anos ou mais e entender as limitações da análise local. O aceite é limpo ao trocar/remover a foto.
-3. Ao clicar, um **Web Worker** recebe o arquivo por structured clone, dentro do próprio navegador. Não há HTTP com a imagem. A foto é decodificada localmente, respeitando a orientação, e reduzida para até 1280×1280, sem distorção.
-4. O MediaPipe usa CPU/WASM em modo IMAGE e procura até dois rostos para poder rejeitar fotos com múltiplos rostos detectados. Zero ou mais de um rosto, pontos inválidos, rosto pequeno/cortado, indícios geométricos de pose lateral ou olhos fechados geram erro, sem nota.
-5. O relatório contém apenas indicadores agregados e textos determinísticos. Não inclui imagem nem coordenadas faciais completas. Fica na memória React da aba e é perdido ao atualizar/fechar a página ou ao descartar.
-
-**Nenhuma foto ou ponto facial é enviado, gravado em disco/banco, cookies, URLs, localStorage ou sessionStorage pelo aplicativo.** Apenas código, WASM e modelo estáticos podem entrar no cache normal do navegador. Não há câmera automática, analytics, serviço de terceiros em runtime nem service worker. As URLs de imagem são revogadas, bitmap/canvas são liberados e o worker é encerrado ao concluir, falhar, cancelar, remover a foto ou sair da página. Não há garantia de apagamento criptográfico imediato da memória gerenciada.
-
-O timeout local é de 60 segundos. Remover a foto encerra o worker, inclusive durante a inferência síncrona, sem bloquear a interface. Navegador incompatível, modelo ausente, erro de decodificação e falha do detector têm mensagens próprias.
-
-O worker é servido com Content Security Policy que limita conexões e scripts à mesma origem (`connect-src 'self'`), como defesa adicional contra telemetria ou recursos externos. Mantenha esses headers caso adapte a hospedagem.
-
-## Indicadores realmente calculados
-
-As coordenadas normalizadas são convertidas para **pixels**, respeitando a razão largura/altura da foto. O eixo horizontal é alinhado pelos cantos externos dos olhos (33 e 263); a direção vertical aponta da testa ao queixo. Isso remove rotação no plano, **não** perspectiva 3D.
-
-O contorno horizontal usa os pontos 234/454 e a altura usa 10/152. O eixo de reflexão é a média das posições horizontais de 10, 168 e 152. Os índices seguem a topologia Face Mesh do MediaPipe:
-
-- **Erro de reflexão:** média das distâncias entre um ponto e a reflexão do par pelo eixo, dividida pela largura facial. Sete pares: 33/263, 133/362, 159/386, 145/374, 234/454, 172/397 e 61/291.
-- **Diferença das larguras dos olhos:** diferença absoluta das distâncias 33–133 e 362–263, dividida pela maior.
-- **Diferença dos lados do contorno mandibular:** diferença absoluta das distâncias 172–152 e 397–152, dividida pela maior.
-- **Altura/largura:** altura alinhada 10–152 / largura alinhada 234–454. O ponto 10 não representa a linha do cabelo.
-- **Largura mandibular/largura facial:** largura alinhada 172–397 / largura alinhada 234–454.
-- **Espaço interno dos olhos/largura facial:** distância 133–362 / largura facial.
-- **Largura da boca/largura facial:** distância 61–291 / largura facial.
-- **Trecho base do nariz–queixo/altura facial:** altura alinhada 2–152 / altura alinhada 10–152.
-
-As fórmulas e valores são apresentados em `/resultados`. Não há inferência de identidade, idade, gênero, etnia, saúde, personalidade, gordura, textura da pele, densidade de cabelo ou estrutura óssea. Não são calculados milímetros, profundidade, ângulos ósseos, razão áurea ou medidas clínicas.
-
-## Nota subjetiva e critérios transparentes
-
-A nota de 0 a 100 é um **índice subjetivo de equilíbrio bilateral 2D**, não uma medida científica de beleza. Pesos/tolerâncias são escolhas do produto, sem validação científica:
-
-| Componente | Peso | Erro que zera o componente |
+| Modelo público v1 | Arquivo | SHA-256 |
 | --- | --- | --- |
-| Reflexão dos 7 pares | 60% | 8% da largura facial |
-| Equilíbrio da largura dos olhos | 25% | 30% de diferença relativa |
-| Equilíbrio dos lados do contorno mandibular | 15% | 30% de diferença relativa |
+| Face Landmarker float16 | `face_landmarker.task` | `64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff` |
+| Selfie Multiclass 256×256 float32 | `selfie_multiclass_256x256.tflite` | `c6748b1253a99067ef71f7e26ca71096cd449baefa8f101900ea23016507e0e0` |
+
+Os URLs oficiais/versionados estão em `scripts/prepare-models.mjs`. Os assets gerados ficam fora do Git. Se houver erro de rede, execute novamente `npm run prepare:models`; hash inválido interrompe o build em vez de servir um modelo corrompido. O segmentador multiclasses (cerca de 16,4 MB) separa fundo, cabelo, pele corporal, pele facial, roupas e acessórios.
+
+## Captura e privacidade
+
+- Aceita JPG, PNG e WebP até 5 MB e 16 megapixels. Valida tipo, assinatura e decodificação local.
+- O usuário declara ser titular da selfie, ter 18 anos ou mais e entender que as notas são subjetivas. O aceite é limpo ao trocar/remover a foto.
+- Um worker recebe o arquivo por structured clone **dentro do navegador**, nunca por HTTP. A inferência usa CPU/WASM, não uma função serverless. Não há câmera automática, analytics ou service worker.
+- O Face Landmarker procura até dois rostos; zero/múltiplos, pontos inválidos, rosto pequeno ou enquadramento inadequado geram erro sem resultado fabricado.
+- Pele/Cabelo usam Image Segmenter e pixels locais. Máscaras, pixels e coordenadas completas não entram no relatório. Falha/insuficiência de uma região produz `—`, não uma nota de substituição.
+- A sessão contém somente relatório e URL `blob:` da miniatura em memória. Nova análise, atualização/fechamento ou descarte libera a sessão. Não há escrita de fotos em banco/disco, cookies, URLs remotas, localStorage ou sessionStorage.
+- O worker, bitmaps, máscaras, instâncias MediaPipe e canvases são liberados ao concluir/cancelar. O timeout local é de 60 s. Não há garantia de apagamento criptográfico imediato da memória gerenciada.
+- A CSP do worker limita scripts e conexões à origem local; os testes verificam que só há GETs locais para recursos estáticos. Apenas código, fontes, WASM e modelos podem entrar no cache normal do navegador.
+
+## Calibração técnica v2
+
+**Critérios, investigação, fórmulas e limitações completos: [docs/CALIBRATION.md](docs/CALIBRATION.md).**
+
+O caso de Pele 9,9 relatado sem imagem não pode ser diagnosticado/reproduzido individualmente. Foram corrigidos pontos cegos verificáveis do algoritmo: platôs, normalização pelo rosto inteiro, diluição de irregularidades e bônus por nitidez. Não foi aplicado desconto artificial, nota aleatória ou distribuição-alvo de beleza.
+
+### Geometria e geral
+
+Olhos, Sobrancelhas, Nariz, Lábios, Mandíbula, Queixo e Maçãs do rosto medem equilíbrio bilateral projetado, não tamanho/forma ideais. Usam coordenadas em pixels alinhadas e erros RMS normalizados pela própria região. Olhos consideram também largura e abertura relativas; mandíbula considera as distâncias laterais ao queixo.
 
 ```text
-componente = 100 × máximo(0, 1 − erro/tolerância)
-nota = arredondar(0,60 × reflexão + 0,25 × olhos + 0,15 × contorno)
+componente = 100 / (1 + (erro regional / 0,08)²)
+nota regional = arredondar_1_casa(componente / 10)
+geral = arredondar_1_casa(10 / (1 + média((erro regional / 0,08)²)))
+harmonia facial = geral
 ```
 
-As proporções descritivas não aumentam nem reduzem a nota. Uma face perfeitamente equilibrada nesses critérios recebe 100 **sem que isso signifique beleza ideal**. Uma nota baixa pode refletir captura, pose, expressão ou erro do detector, não uma característica permanente da pessoa.
+A referência 0,08 é meia-resposta técnica, não norma biológica. Sem matriz de pose confiável, inclinação frontal até 15° e todas as sete regiões disponíveis, geral/Harmonia/PSL ficam `—`. Não se preenche região ausente com média ou zero. Pele e Cabelo não alteram a geral nem a classificação.
 
-Recomendações opcionais de looksmaxing usam somente indicadores calculáveis: altura/largura acima de 1,45, abaixo de 1,15 ou intermediária; largura mandibular abaixo/acima de 70% da largura facial; erro de reflexão acima de 2,5% ou diferença de largura ocular acima de 8%. Esses limiares são declarados nas recomendações e são heurísticos de estilo/captura, não padrões de normalidade. Sugestões se limitam a enquadramento, iluminação, penteados, armações e acabamento de barba **se o usuário usa barba**; não detectam esses atributos nem recomendam procedimentos, restrição alimentar ou técnicas arriscadas.
+### Pele e Cabelo
 
-## Limitações e testes
+As notas representam somente apresentação fotográfica, de 0,0 a 10,0, sempre com vírgula. Não avaliam cor natural, saúde dermatológica/capilar, densidade real, estrutura óssea ou valor pessoal.
 
-Uma foto 2D não revela anatomia 3D. Rotação lateral, inclinação vertical, expressão, maquiagem e oclusão podem distorcer resultados. Os filtros geométricos são heurísticos, não certificam frontalidade nem garantem que todos os rostos sejam detectados. Modelo/limiares podem ter vieses e desempenho diferente entre pessoas. O relatório não é diagnóstico, ranking ou avaliação de valor pessoal.
+Pele usa máscara facial, até cinco áreas anatômicas e escolha de áreas por confiança/luz/suficiência, nunca pela nota desejada. Exige dois grupos distintos, 400 pixels úteis, cobertura ≥40%, confiança média ≥0,72, referências de foco e exposição utilizável. Usa residual local médio, sua energia RMS, contraste de média escala em 13×13 e variação entre áreas. A nitidez é elegibilidade (`D≥1,25`), não um bônus de até três pontos. Resposta contínua: `10/(1+perda/0,10)`. A escala canônica de até 160 px de largura facial **não recupera detalhes perdidos por redução, filtros ou compressão**.
 
-Os testes verificam fórmulas, erros, pesos, limites, invariância a rotação/espelhamento e conversão de pixels, cancelamento e ausência de chamadas de rede pelo cliente. Testes E2E usam pontos sintéticos **apenas para o fluxo de sucesso**, sem substituir o detector na aplicação. Outro teste carrega o **MediaPipe real** com os arquivos locais, rejeita uma imagem sintética sem rosto e verifica que só há GETs da mesma origem, sem upload. Isso não representa uma validação de precisão facial populacional.
+Cabelo exige máscara/confiança, área e sinal suficientes. Cobertura visível não rende pontos nem estima densidade. Mede consistência **relativa** de definição e gradiente nas células válidas; `10/(1+perda)`. Nitidez (`D≥0,5`) é elegibilidade, não um bônus de até sete pontos. Penteado, textura natural, reflexos e ruído podem afetar o índice, que não está validado para comparar tipos de cabelo ou grupos humanos.
 
-## Estrutura
+### Classificação PSL
 
-- `public/face-landmarker.worker.js`: inferência MediaPipe isolada, somente local.
-- `scripts/prepare-models.mjs`: preparação e verificação dos assets.
-- `src/lib/face-analysis.ts`: gerenciamento/cancelamento do worker e validação da resposta.
-- `src/lib/face-geometry.ts`: cálculo puro dos indicadores, nota e recomendações.
-- `src/lib/analysis-schema.ts`: contratos e aviso fixo de subjetividade.
-- `src/components/selfie-upload.tsx`: seleção, pré-visualização e aceite de processamento local.
-- `src/components/analysis-results.tsx`: relatório preto e verde, valores e fórmulas.
-- `src/components/analysis-session.tsx`: somente relatório em memória.
+Função centralizada em `src/lib/score-classification.ts`; classifica a mesma nota arredondada que é exibida:
 
-Documentação: [MediaPipe Face Landmarker](https://ai.google.dev/edge/mediapipe/solutions/vision/face_landmarker/web_js). O runtime `@mediapipe/tasks-vision` usa licença Apache-2.0; consulte os termos/fontes do modelo disponibilizado pelo Google antes de redistribuir os assets. Nenhum deploy ou push é feito por estes comandos.
+| Nota | Categoria |
+| --- | --- |
+| 0,0–1,1 | Sub 3 |
+| 1,2–2,2 | Sub 5 |
+| 2,3–3,3 | LTN |
+| 3,4–4,4 | MTN |
+| 4,5–5,5 | HTN |
+| 5,6–6,6 | Chadlite |
+| 6,7–7,7 | Chad |
+| 7,8–8,8 | Adam |
+| 8,9–10,0 | True Adam |
+
+São rótulos subjetivos pedidos para o app, sem validação científica. As faixas não mudaram.
+
+### Potencial
+
+É o cenário superior de uma faixa **heurística de variação técnica da captura**, não uma previsão de beleza ou da próxima nota. Não altera a nota geral. Sem dados confiáveis, mostra `— / Não estimado`.
+
+Com `rampa(x,a,b)=limitar((x−a)/(b−a),0,1)`, `S=geral`, `c=fração escura+clara`, `b=diferença relativa das médias laterais`, `t=inclinação frontal`, `r=roll` e `o=distância normalizada ao centro`:
+
+```text
+L = 0,5 × rampa(c,0,02,0,20) + 0,5 × rampa(b,0,08,0,50)
+A = rampa(t,3,25)
+R = 1 − 0,25 × rampa(r,2,20)
+C = 1 − 0,25 × rampa(o,0,04,0,25)
+U = (0,4L + 0,6A) × R × C
+Δ = mínimo(1,5; 10−S) × U
+faixa = [máximo(0; S−Δ), mínimo(10; S+Δ)], arredondada a uma casa
+potencial = limite superior
+```
+
+As condições completas estão em `src/lib/capture-potential.ts` e nos testes. A geral já exige pose até 15° antes do cálculo. A próxima nota pode subir, cair, ficar igual ou sair dessa faixa. Não é intervalo de confiança estatístico nem garantia de melhoria.
+
+## Testes, imagens e limites de confiança
+
+`tests/fixtures/calibration-images.ts` gera imagens autorais procedurais em memória para condições conhecidas de luz, ganho, desfoque e textura. São testes numéricos adequados e sem dados pessoais, **não fotografias reais consentidas nem calibração populacional**. Testes com pontos controlados verificam respostas de cada região, invariância no plano e abstenção de pose. A suíte E2E verifica fontes locais, formatação, layout, ausência de uploads e modelos reais carregados com imagens sintéticas. Detectores/máscaras são substituídos somente em testes explicitamente marcados de integração.
+
+**Não foi demonstrada precisão estética ou ausência de viés entre grupos.** Não há atributos demográficos na fórmula, mas o MediaPipe e os índices podem ter vieses. Validação em pessoas reais requer conjunto consentido, representativo e protocolo independente. Os resultados não devem orientar diagnósticos, procedimentos ou comparações populacionais.
+
+## Vercel e publicação
+
+`vercel.json` fixa preset Next.js, `npm ci` e **`npm run build`**, preservando o hook de preparação de modelos. Não use `next build` diretamente, pois pula `prebuild`. Use raiz do repositório, Output Directory padrão e Node.js LTS suportado (recomendado 24.x). O build precisa de rede para baixar modelos e Google Fonts; não há serviço de inferência remoto no navegador. Manrope é servida localmente por `next/font` depois do build.
+
+Um push para a branch conectada pode disparar deploy automático. O HTML identifica `data-calibration="2"` e `data-build` com `VERCEL_GIT_COMMIT_SHA` (ou `local` fora da Vercel), permitindo conferir que o domínio serve o commit certo. Não são segredos ou dados de selfies.
+
+Fontes: [Face Landmarker](https://ai.google.dev/edge/mediapipe/solutions/vision/face_landmarker/web_js), [Image Segmenter](https://ai.google.dev/edge/mediapipe/solutions/vision/image_segmenter/index), [Manrope](https://github.com/google/fonts/tree/main/ofl/manrope). Respeite as licenças/termos dos modelos, do runtime Apache-2.0 e da fonte SIL Open Font License ao redistribuir os assets.

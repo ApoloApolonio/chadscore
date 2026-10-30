@@ -115,7 +115,7 @@ test("cliente usa worker local, valida pontos, trata erro e cancela liberando re
     }
   });
   const result = await faceAnalysisProvider.analyze(makeFile(pngHeader), true);
-  assert.equal(result.report.score, 100);
+  assert.equal(result.report.score, 10);
   reply = {};
   await assert.rejects(faceAnalysisProvider.analyze(makeFile(pngHeader), true), /pontos inválidos/);
   reply = { error: "Modelo local indisponível" };
