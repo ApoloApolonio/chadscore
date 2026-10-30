@@ -63,6 +63,21 @@ test("largura/altura do queixo e contorno malar têm resposta mensurável indepe
   }
 });
 
+test("inclinação cantal usa a mesma convenção nos dois olhos: externo acima é positivo", () => {
+  // 8 px em 100 px de largura ocular; a normalização de roll desconta a inclinação do eixo entre os olhos.
+  const measure = (dy: number) => {
+    const data = syntheticDetection();
+    data.faces[0][33].y += dy; data.faces[0][362].y += dy;
+    return calculateFaceReport(data);
+  };
+  const raised = measure(-.008), lowered = measure(.008);
+  const tilt = (report: typeof raised) => report.measurements.find((metric) => metric.label === "Inclinação cantal aparente média")!.value;
+  assert.ok(Math.abs(tilt(raised) - 3.14) < .05);
+  assert.ok(Math.abs(tilt(lowered) + 3.14) < .05);
+  assert.ok(raised.regions.eyes! > lowered.regions.eyes!);
+  assert.ok(raised.scoring.structure! > lowered.scoring.structure!);
+});
+
 test("escala/distância projetada e translação preservam notas quando há pixels suficientes", () => {
   const baseline = calculateFaceReport(syntheticDetection());
   for (const scale of [.4, .7, 1.05]) {

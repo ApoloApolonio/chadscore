@@ -31,7 +31,8 @@ export function measureStructure(align: (index: number) => Point | null, balance
     cheekJaw: compute([234, 454, 172, 397], () => width() / jaw()),
     cheekContour: compute([93, 323, 234, 454], () => distance(p[93], p[323]) / width()),
     eyeOpening: compute([159, 145, 386, 374, 33, 133, 263, 362], () => (distance(p[159], p[145]) / eye(33, 133) + distance(p[386], p[374]) / eye(263, 362)) / 2),
-    eyeTilt: compute([33, 133, 263, 362], () => (degrees(Math.atan2(p[133].y - p[33].y, Math.abs(p[133].x - p[33].x))) + degrees(Math.atan2(p[362].y - p[263].y, Math.abs(p[362].x - p[263].x)))) / 2),
+    // Inner minus outer corner in BOTH eyes: positive when the outer corner is above.
+    eyeTilt: compute([33, 133, 263, 362], () => (degrees(Math.atan2(p[133].y - p[33].y, Math.abs(p[133].x - p[33].x))) + degrees(Math.atan2(p[263].y - p[362].y, Math.abs(p[362].x - p[263].x)))) / 2),
     browEyeGap: compute([70, 105, 300, 334, 33, 133, 263, 362], () => (((p[33].y + p[133].y - p[70].y - p[105].y) / 2) / eye(33, 133) + ((p[263].y + p[362].y - p[300].y - p[334].y) / 2) / eye(263, 362)) / 2),
     browSlope: compute([70, 105, 300, 334], () => (degrees(Math.atan2(Math.abs(p[105].y - p[70].y), Math.abs(p[105].x - p[70].x))) + degrees(Math.atan2(Math.abs(p[334].y - p[300].y), Math.abs(p[334].x - p[300].x)))) / 2),
     browArch: compute([70, 63, 105, 300, 293, 334], () => (arch(70, 63, 105) + arch(300, 293, 334)) / 2),

@@ -17,26 +17,37 @@ export const faceAnalysisProvider: FaceAnalysisProvider = {
     if (signal?.aborted) throw new DOMException("Cancelado", "AbortError");
     const report = await new Promise<FaceAnalysisResponse>((resolve, reject) => {
       const worker = new Worker("/face-landmarker.worker.js");
+      let settled = false;
       const cleanup = () => {
+        if (settled) return false;
+        settled = true;
         clearTimeout(timer);
         signal?.removeEventListener("abort", abort);
+        worker.onmessage = null;
+        worker.onerror = null;
+        worker.onmessageerror = null;
         worker.terminate();
+        return true;
       };
       const abort = () => {
-        cleanup();
+        if (!cleanup()) return;
         reject(new DOMException("Cancelado", "AbortError"));
       };
       const timer = setTimeout(() => {
-        cleanup();
+        if (!cleanup()) return;
         reject(new Error("O processamento local demorou demais. Tente uma foto menor ou outro navegador."));
       }, 60_000);
       signal?.addEventListener("abort", abort, { once: true });
       worker.onerror = () => {
-        cleanup();
+        if (!cleanup()) return;
         reject(new Error("Não foi possível carregar a análise local. Execute npm run prepare:models e tente novamente."));
       };
+      worker.onmessageerror = () => {
+        if (!cleanup()) return;
+        reject(new Error("Não foi possível ler a resposta da análise local. Tente outra foto ou reinicie o navegador."));
+      };
       worker.onmessage = ({ data }: MessageEvent<unknown>) => {
-        cleanup();
+        if (!cleanup()) return;
         try {
           if (data && typeof data === "object" && "error" in data && typeof data.error === "string") {
             throw new Error(data.error);
@@ -64,7 +75,7 @@ export const faceAnalysisProvider: FaceAnalysisProvider = {
         // Structured clone para outro contexto do MESMO navegador, nunca HTTP.
         worker.postMessage({ file });
       } catch {
-        cleanup();
+        if (!cleanup()) return;
         reject(new Error("Não foi possível processar este arquivo localmente."));
       }
     });

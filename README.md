@@ -2,6 +2,8 @@
 
 Next.js, TypeScript, Tailwind CSS e **MediaPipe local e gratuito**. Interface minimalista #050505, cards grafite #111216, tipografia Manrope via `next/font`, bordas prateadas, reflexos branco frio e acentos azul-gelo #8CCBFF. Sem conta, chave, backend de upload ou API paga para analisar selfies.
 
+> **ChadScore Stable Base v1.0 (candidata):** auditoria concluída, pendente de aprovação. Nenhuma tag, push ou deploy foi feito nesta etapa. Evidências, correções e limitações em [docs/STABLE-BASE-V1.md](docs/STABLE-BASE-V1.md).
+
 ## Executar e validar
 
 Requisitos: Node.js LTS suportado pelo Next.js (recomendado 24.x), npm e navegador atualizado com WebAssembly, Web Worker, `createImageBitmap` e `OffscreenCanvas`.
