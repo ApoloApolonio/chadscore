@@ -4,7 +4,18 @@ export const CALIBRATION_VERSION = "3";
 export const SCORE_WEIGHTS = { structure: 0.70, harmony: 0.30, presentation: 0 } as const;
 export const STRUCTURE_REGION_WEIGHTS = { jawline: .30, chin: .20, cheekbones: .20, eyes: .20, eyebrows: .10 } as const;
 export const REGION_SCORE_WEIGHTS = { shape: .75, balance: .25 } as const;
-export const CAPTURE_LIMITS = { tiltDegrees: 12, minimumFacePixels: 160, minimumDetail: .015, maximumClipping: .20, maximumLightingImbalance: .35, maximumExpression: .45, maximumMouthOpening: .10 } as const;
+export const CAPTURE_LIMITS = { tiltDegrees: 12, minimumFacePixels: 160, minimumDetail: .015, maximumClipping: .20, maximumLightingImbalance: .35 } as const;
+
+/** Capture eligibility only; never changes the v3 score weights/response curves.
+ * Blendshapes are activation estimates, not calibrated probabilities of a bad photo.
+ * Conservative joint evidence avoids treating natural anatomy as an expression.
+ */
+export const EXPRESSION_LIMITS = {
+  mouth: { strongJaw: .80, corroboratingOpening: .16, maximumOpening: .30 },
+  smile: { bilateralActivation: .80, bilateralLift: .035, unilateralActivation: .90, unilateralLift: .07 },
+  eyes: { minimumOpening: .035, strongBlink: .90, closedOpening: .10, winkActivation: .80, winkOpening: .14, winkRatio: .55 },
+  brows: { innerActivation: .90, outerActivation: .90, minimumGap: 1.20 },
+} as const;
 
 // Targets are app preferences, not estimates from celebrities or universal ideals.
 // HalfResponse: deviation at which the individual response reaches 5/10.

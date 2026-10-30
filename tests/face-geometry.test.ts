@@ -78,7 +78,6 @@ test("não inventa medições com pontos inválidos, pose inadequada ou olhos fe
     (data: ReturnType<typeof syntheticDetection>) => { data.faces[0][10].x = NaN; },
     (data: ReturnType<typeof syntheticDetection>) => { data.faces[0][10].x = -1; },
     (data: ReturnType<typeof syntheticDetection>) => { data.faces[0][1].x = 0.7; },
-    (data: ReturnType<typeof syntheticDetection>) => { data.faces[0][159] = { ...data.faces[0][145] }; },
     (data: ReturnType<typeof syntheticDetection>) => { data.width = 10; },
   ]) {
     const data = syntheticDetection();

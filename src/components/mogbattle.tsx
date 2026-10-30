@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { analyzeBattlePhotos, type BattleAnalysisCache } from "@/lib/battle-analysis";
+import { analyzeBattlePhotos, BattleAnalysisError, type BattleAnalysisCache } from "@/lib/battle-analysis";
 import { compareBattleScores } from "@/lib/mogbattle";
 import { BattleParticipant } from "./battle-participant";
 import { BattleResult, type BattleResultData } from "./battle-result";
@@ -52,7 +52,14 @@ export function MogBattle() {
         { name: labels[1], photoUrl: photos[1].url, analysis: responses[1] },
       ] });
     } catch (cause) {
-      if (id === run.current && !abort.signal.aborted) setError(cause instanceof Error ? cause.message : "Não foi possível concluir as duas análises. Nenhum vencedor foi declarado.");
+      if (id === run.current && !abort.signal.aborted) {
+        if (cause instanceof BattleAnalysisError) {
+          const details = cause.failures.map(({ participant, message }) =>
+            `Participante ${participant + 1}${names[participant].trim() ? ` (${labels[participant]})` : ""}: ${message}`);
+          const valid = ([0, 1] as const).find((index) => cache.current.has(photos[index].file));
+          setError(`${details.join(" ")} Troque somente ${cause.failures.length === 1 ? "a foto indicada" : "as fotos indicadas"}. ${valid === undefined ? "" : `A análise válida do participante ${valid + 1} será reutilizada. `}Nenhum vencedor foi declarado.`);
+        } else setError(cause instanceof Error ? cause.message : "Não foi possível concluir as duas análises. Nenhum vencedor foi declarado.");
+      }
     } finally { if (id === run.current) setAnalyzing(false); }
   }
 

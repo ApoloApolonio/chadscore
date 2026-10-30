@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { aggregateFaceScore, CAPTURE_LIMITS, geometricResponse, SCORE_WEIGHTS, STRUCTURE_CRITERIA, STRUCTURE_REGION_WEIGHTS, weightedHarmonic } from "../src/lib/calibration";
 import { calculateFaceReport } from "../src/lib/face-geometry";
 import { measureStructure } from "../src/lib/structural-geometry";
-import { assessCapture } from "../src/lib/capture-confidence";
+import { assessCapture, measureExpressionGeometry } from "../src/lib/capture-confidence";
 import { compareBattleScores } from "../src/lib/mogbattle";
 import { sampleCaptureQuality } from "../public/capture-quality.mjs";
 import { syntheticDetection, syntheticExpressions, syntheticFaceMatrix, syntheticQuality } from "./fixtures/landmarks";
@@ -90,7 +90,6 @@ test("ausência, baixa resolução, desfoque, sombras, pose e expressão provoca
     { captureQuality: { ...syntheticQuality(), lightingImbalance: .36 } },
     { captureQuality: { ...syntheticQuality(), sourceFaceWidth: 159 } },
     { faceMatrices: [syntheticFaceMatrix(CAPTURE_LIMITS.tiltDegrees + 1)] },
-    { faceExpressions: [syntheticExpressions().map((entry) => ({ ...entry, score: entry.categoryName === "mouthSmileLeft" ? .6 : 0 }))] },
   ]) {
     const report = calculateFaceReport({ ...syntheticDetection(), ...change });
     assert.equal(report.score, null);
@@ -99,9 +98,10 @@ test("ausência, baixa resolução, desfoque, sombras, pose e expressão provoca
     assert.ok(report.captureConfidence.reasons.length > 0);
     assert.equal(compareBattleScores(8, report.score).status, "unavailable");
   }
-  const data = syntheticDetection(); data.faces[0][14].y += .04;
+  const data = syntheticDetection(); data.faces[0][14].y += .08;
   assert.equal(calculateFaceReport(data).score, null);
-  const input = { quality: syntheticQuality(), matrices: [syntheticFaceMatrix()], expressions: [syntheticExpressions()], facePixels: 500, mouthOpening: NaN };
+  const input = { quality: syntheticQuality(), matrices: [syntheticFaceMatrix()], expressions: [syntheticExpressions()], facePixels: 500,
+    geometry: { ...measureExpressionGeometry((index) => data.faces[0][index]), mouthOpening: NaN } };
   assert.equal(assessCapture(input).reliable, false);
 });
 

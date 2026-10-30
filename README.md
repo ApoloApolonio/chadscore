@@ -115,6 +115,10 @@ A proposta 60/25/15 foi avaliada: apresentação poderia deslocar a geral em 1,5
 
 Exige matriz de pose até 12°, rosto com ≥160 px, detalhe canônico ≥0,015, clipping ≤20%, desequilíbrio lateral ≤35% e expressão neutra verificada por blendshapes e abertura labial. Falta de confiança solicita outra captura, sem nota ou vencedor. Escala, translação e rotação no plano são normalizadas quando possível; perspectiva/lente não são reconstruídas. Esses gates são heurísticos e não garantem equivalência entre fotos aceitas. Prefira distância/lente semelhantes e luz difusa. Contornos e sombras não são estrutura óssea real.
 
+O antigo veto de qualquer blendshape >0,45 foi substituído por critérios específicos de expressão forte com confirmação geométrica. Olhos naturalmente estreitos, sobrancelhas altas, sorriso leve e lábios ligeiramente separados não são rejeitados apenas pela ativação do modelo. Nitidez, pose, enquadramento e exposição continuam protegidos; os limiares e limitações estão em [CALIBRATION.md](docs/CALIBRATION.md). Isso altera somente elegibilidade, não pesos, fórmulas ou faixas PSL v3.
+
+O erro do MogBattle identifica o participante (e nome opcional) e a causa específica. É possível trocar somente a foto rejeitada; o sucesso confiável do outro fica em memória e é reutilizado, inclusive quando a primeira foto falha. Se as duas falharem, mostra ambos os motivos; nunca inventa notas ou vencedor.
+
 ### Pele e Cabelo
 
 As notas representam somente apresentação fotográfica, de 0,0 a 10,0, sempre com vírgula. Não avaliam cor natural, saúde dermatológica/capilar, densidade real, estrutura óssea ou valor pessoal.

@@ -3,7 +3,7 @@ import { roundScore } from "./score-classification";
 import { estimateCapturePotential } from "./capture-potential";
 import { calculateAppearanceScores } from "./appearance-scores";
 import { aggregateFaceScore, CALIBRATION_VERSION, geometricResponse, rms } from "./calibration";
-import { assessCapture } from "./capture-confidence";
+import { assessCapture, measureExpressionGeometry } from "./capture-confidence";
 import { measureStructure } from "./structural-geometry";
 
 export type Point = { x: number; y: number };
@@ -119,10 +119,6 @@ export function calculateFaceReport({ faces, width, height, captureLight, faceMa
   if (Math.min(leftEyeWidth, rightEyeWidth, leftJaw, rightJaw) < 5) {
     throw new Error("Os pontos dos olhos ou do contorno não são confiáveis. Escolha outra foto.");
   }
-  if (distance(p[159], p[145]) / leftEyeWidth < 0.08 ||
-      distance(p[386], p[374]) / rightEyeWidth < 0.08) {
-    throw new Error("Os olhos parecem fechados ou encobertos. Use uma foto com os dois olhos visíveis.");
-  }
 
   const mirrorError = rms(SYMMETRY_PAIRS.map(([left, right]) =>
     Math.hypot(p[left].x + p[right].x - 2 * axis, p[left].y - p[right].y) / faceWidth));
@@ -141,9 +137,8 @@ export function calculateFaceReport({ faces, width, height, captureLight, faceMa
     const dx = point.x * width - origin.x, dy = point.y * height - origin.y;
     return { x: dx * ex.x + dy * ex.y, y: dx * ey.x + dy * ey.y };
   };
-  const lipTop = align(13), lipBottom = align(14);
   const captureConfidence = assessCapture({ quality: captureQuality, matrices: faceMatrices, expressions: faceExpressions,
-    facePixels: faceWidth, mouthOpening: lipTop && lipBottom ? distance(lipTop, lipBottom) / distance(p[61], p[291]) : null });
+    facePixels: faceWidth, geometry: measureExpressionGeometry(align) });
   const geometryReliable = captureConfidence.reliable;
 
   function regionalError(pairs: readonly (readonly [number, number])[]): number | null {

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { compareBattleScores, battleComparisonRows } from "../src/lib/mogbattle";
-import { analyzeBattlePhotos } from "../src/lib/battle-analysis";
+import { analyzeBattlePhotos, BattleAnalysisError } from "../src/lib/battle-analysis";
 import { calculateFaceReport } from "../src/lib/face-geometry";
 import { syntheticDetection } from "./fixtures/landmarks";
 import type { FaceAnalysisResponse } from "../src/lib/analysis-schema";
@@ -69,4 +69,49 @@ test("cancelamento tardio interrompe a batalha e não coloca análise descartada
   assert.equal(calls, 1); assert.equal(cache.has(files[0]), false);
   await assert.rejects(analyzeBattlePhotos(files, { provider, cache, signal: abort.signal }), { name: "AbortError" });
   assert.equal(calls, 1);
+});
+
+for (const rejected of [0, 1] as const) test(`falha do participante ${rejected + 1} tem índice e preserva sucesso do outro, inclusive após substituir somente a rejeitada`, async () => {
+  const files: [File, File] = [new File(["one"], "one.png"), new File(["two"], "two.png")];
+  const bad = files[rejected], calls: File[] = [];
+  const cache = new WeakMap<File, FaceAnalysisResponse>();
+  const provider = { async analyze(file: File) {
+    calls.push(file);
+    if (file === bad) throw new Error("O olho direito parece fechado nesta captura.");
+    return response();
+  } };
+  const options = { cache, provider, signal: new AbortController().signal };
+  await assert.rejects(analyzeBattlePhotos(files, options), (error: unknown) => {
+    assert.ok(error instanceof BattleAnalysisError);
+    assert.deepEqual(error.failures, [{ participant: rejected, message: "O olho direito parece fechado nesta captura." }]);
+    return true;
+  });
+  assert.deepEqual(calls.map((file) => file.name), files.map((file) => file.name));
+  const valid = files[1 - rejected], validResponse = cache.get(valid);
+  assert.ok(validResponse); assert.equal(cache.has(bad), false);
+  files[rejected] = new File(["fixed"], "fixed.png");
+  const result = await analyzeBattlePhotos(files, options);
+  assert.equal(result[1 - rejected], validResponse);
+  assert.equal(calls.length, 3);
+  assert.equal(calls[2], files[rejected]);
+});
+
+test("duas falhas são atribuídas separadamente, sem cache ou resultado parcial fabricado", async () => {
+  const files: [File, File] = [new File(["one"], "one.png"), new File(["two"], "two.png")];
+  const cache = new WeakMap<File, FaceAnalysisResponse>();
+  const provider = { async analyze(file: File) { throw new Error(file === files[0] ? "Foto desfocada" : "Rosto encoberto"); } };
+  await assert.rejects(analyzeBattlePhotos(files, { provider, cache, signal: new AbortController().signal }), (error: unknown) => {
+    assert.ok(error instanceof BattleAnalysisError);
+    assert.deepEqual(error.failures, [{ participant: 0, message: "Foto desfocada" }, { participant: 1, message: "Rosto encoberto" }]);
+    return true;
+  });
+  assert.equal(cache.has(files[0]), false); assert.equal(cache.has(files[1]), false);
+});
+
+test("provider alternativo sem nota confiável nunca entra no cache da batalha", async () => {
+  const files: [File, File] = [new File(["one"], "one.png"), new File(["two"], "two.png")];
+  const cache = new WeakMap<File, FaceAnalysisResponse>();
+  const provider = { async analyze() { const result = response(); result.report.score = null; return result; } };
+  await assert.rejects(analyzeBattlePhotos(files, { provider, cache, signal: new AbortController().signal }), BattleAnalysisError);
+  assert.equal(cache.has(files[0]), false); assert.equal(cache.has(files[1]), false);
 });

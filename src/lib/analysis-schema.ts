@@ -7,7 +7,7 @@ const description = z.string().min(1).max(1200);
 
 export const ReportSchema = z.strictObject({
   calibrationVersion: z.literal("3"),
-  captureConfidence: z.object({ reliable: z.boolean(), reasons: z.array(z.string()).max(8) }),
+  captureConfidence: z.object({ reliable: z.boolean(), reasons: z.array(z.string()).max(12) }),
   scoring: z.object({ structure: z.number().min(0).max(10).nullable(), harmony: z.number().min(0).max(10).nullable() }),
   score: z.number().min(0).max(10).nullable(),
   potential: z.number().min(0).max(10).nullable(),

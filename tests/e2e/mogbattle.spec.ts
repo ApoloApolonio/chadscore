@@ -4,6 +4,7 @@ import sharp from "sharp";
 import { syntheticDetection, syntheticFaceMatrix } from "../fixtures/landmarks";
 import { calculateFaceReport } from "../../src/lib/face-geometry";
 import { classifyPSL, formatScore } from "../../src/lib/score-classification";
+import { expressionDetection } from "../fixtures/expressions";
 
 declare global { interface Window { battleTest: { workers: number; terminated: number; files: string[] } } }
 
@@ -135,6 +136,44 @@ test("falhas não declaram vencedor e repetição reutiliza análise bem-sucedid
   await startBattle(page);
   await expect(page.getByTestId("battle-outcome")).toContainText("Participante 1 venceu");
   expect(await page.evaluate(() => window.battleTest.files)).toEqual(["first.png", "second.png", "second.png", "fixed.png"]);
+});
+
+for (const rejected of [1, 2]) test(`MogBattle identifica piscada do participante ${rejected} e troca só essa foto, preservando análise válida`, async ({ page }) => {
+  const usable = expressionDetection({ eyeLeft: .12, eyeRight: .12, opening: .12, browGap: 1,
+    activations: { eyeBlinkLeft: .85, eyeBlinkRight: .85, jawOpen: .9, browInnerUp: .96, browOuterUpLeft: .96, browOuterUpRight: .96 } });
+  const blink = expressionDetection({ eyeLeft: .06, activations: { eyeBlinkRight: .96 } });
+  const replies = { "first.png": rejected === 1 ? blink : usable, "second.png": rejected === 2 ? blink : usable, "fixed.png": usable };
+  await mock(page, replies);
+  await setup(page);
+  await person(page, 1).getByRole("textbox").fill("Alex");
+  await person(page, 2).getByRole("textbox").fill("Bruno");
+  await photos(page); await startBattle(page);
+  const alert = page.getByRole("form").getByRole("alert");
+  await expect(alert).toContainText(`Participante ${rejected} (${rejected === 1 ? "Alex" : "Bruno"})`);
+  await expect(alert).toContainText("O olho direito parece fechado ou encoberto");
+  await expect(alert).toContainText(`A análise válida do participante ${3 - rejected} será reutilizada`);
+  await expect(page.getByTestId("battle-outcome")).toHaveCount(0);
+  expect(await page.evaluate(() => window.battleTest.files)).toEqual(["first.png", "second.png"]);
+  const retainedUrl = await person(page, 3 - rejected).locator("img").getAttribute("src");
+  await person(page, rejected).getByLabel(`Foto do participante ${rejected}`, { exact: true }).setInputFiles(await image("fixed.png"));
+  await expect(alert).toHaveCount(0);
+  await expect(person(page, 3 - rejected).locator("img")).toHaveAttribute("src", retainedUrl!);
+  await startBattle(page);
+  await expect(page.getByTestId("battle-outcome")).toHaveText("EMPATE");
+  for (const index of [1, 2]) await expect(page.getByTestId(`battle-score-${index}`)).toContainText(formatScore(calculateFaceReport(usable).score));
+  expect(await page.evaluate(() => window.battleTest.files)).toEqual(["first.png", "second.png", "fixed.png"]);
+});
+
+test("duas capturas rejeitadas exibem os dois participantes e motivos sem vencedor", async ({ page }) => {
+  await mock(page, { "first.png": expressionDetection({ opening: .4 }), "second.png": { ...syntheticDetection(), captureQuality: null } });
+  await setup(page); await photos(page); await startBattle(page);
+  const alert = page.getByRole("form").getByRole("alert");
+  await expect(alert).toContainText("Participante 1:");
+  await expect(alert).toContainText("A boca está muito aberta");
+  await expect(alert).toContainText("Participante 2:");
+  await expect(alert).toContainText("Não foi possível verificar a nitidez");
+  await expect(alert).not.toContainText("análise válida");
+  await expect(page.getByTestId("battle-outcome")).toHaveCount(0);
 });
 
 test("nota geral indisponível, arquivo inválido e remoção não inventam resultado", async ({ page }) => {

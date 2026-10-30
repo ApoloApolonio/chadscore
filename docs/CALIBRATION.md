@@ -110,13 +110,32 @@ A fórmula de Potencial permanece documentada no README, agora aplicada à geral
 
 `src/lib/capture-confidence.ts` exige: pose até 12°, rosto com ≥160 px na imagem analisada, amostragem canônica de 120–193 px de largura facial, ≥256 amostras, RMS do laplaciano relativo ≥0,015, clipping ≤20% e desequilíbrio lateral ≤35%. O sampler reduz a largura a até 192 px e limita o canvas a 1024 px no maior lado; não aumenta imagens pequenas. A largura é conservadora: o worker já pode ter reduzido imagens grandes.
 
-Exige blendshapes válidos de boca aberta, sorrisos, piscadas e elevação das sobrancelhas, todos ≤0,45; abertura entre lábios 13–14 / largura boca ≤0,10. Metadata ausente, inválida ou expressão forte solicita outra foto. Esses limites são heurísticos: ruído pode passar como detalhe, oclusões/filtros/expressões podem não ser detectados, e não se pode recuperar distância focal ou corrigir perspectiva de uma única foto. **Use distância e lente semelhantes, câmera centralizada, expressão neutra e luz difusa**. O gate reduz erros conhecidos, não garante comparabilidade de toda foto aceita. Qualidade acima do mínimo nunca rende pontos.
+### Correção de falsos positivos de expressão (v3 preservada)
+
+O gate anterior rejeitava **qualquer um de oito blendshapes >0,45**, sem confirmação geométrica. Também rejeitava abertura ocular <0,08 e lábios separados por >0,10 da largura da boca. Esses cortes confundiam ativação do modelo/variação natural com expressão forte. Blendshapes são estimativas de ativação, **não probabilidades calibradas de uma foto inadequada**; sem as selfies do relato não se pode medir a taxa real de falsos positivos.
+
+Os oito metadados continuam obrigatórios e devem ser finitos entre 0 e 1. `EXPRESSION_LIMITS` em `src/lib/calibration.ts` agora separa os casos. `measureExpressionGeometry` usa os mesmos pontos em pixels já alinhados, sem alterar as fórmulas ou notas v3:
+
+| Sinal | Rejeição atual | Justificativa/limite |
+| --- | --- | --- |
+| Boca aberta | abertura 13–14 / 61–291 >0,30 **ou** `jawOpen ≥0,80` junto com abertura >0,16 | Lábios levemente separados não bastam. Abertura geométrica muito grande continua bloqueada mesmo com ativação baixa. |
+| Piscada/oclusão | abertura ocular/largura <0,035 **ou** `blink ≥0,90` com abertura ≤0,10 **ou** `blink ≥0,80` com abertura ≤0,14 e <55% da abertura do outro olho | Evita veto isolado por olhos estreitos; fechamento extremo ou assimetria corroborada ainda bloqueia. Lados anatômicos MediaPipe: olho direito 33/133/159/145; esquerdo 263/362/386/374. |
+| Sorriso | os dois `mouthSmile ≥0,80` e elevação dos dois cantos ≥0,035 **ou** um `mouthSmile ≥0,90` e elevação correspondente ≥0,07 | Elevação = distância vertical do centro entre 13/14 ao canto, dividida pela largura da boca. Sinal moderado ou canto naturalmente elevado sozinho não veta. Canto 61 corresponde ao lado direito, 291 ao esquerdo. |
+| Sobrancelhas | `browInnerUp ≥0,90` **e** os dois `browOuterUp ≥0,90` **e** distância sobrancelha–olho/largura ocular ≥1,20 dos dois lados | Exige elevação extrema conjunta e corroborada; sobrancelha alta ou um único sinal elevado não rejeita automaticamente. |
+
+Os limiares são escolhas heurísticas conservadoras, cobertas por testes controlados, não valores clinicamente/populacionalmente validados. Uma única foto não permite distinguir toda anatomia natural de expressão, nem toda oclusão; algumas expressões podem passar e algumas fotos utilizáveis podem falhar. Dados ausentes, não finitos, contornos colapsados ou fora da imagem continuam sem nota. Não houve redução de proteção de foco, exposição, enquadramento, pose, número de rostos ou resolução. Não há dados reais autorizados no conjunto de testes; não foram buscadas ou publicadas selfies privadas.
+
+No MogBattle, as duas fotos são verificadas sequencialmente mesmo se a primeira falhar (exceto cancelamento). As falhas carregam o índice do participante e o motivo, sem guardar a foto no erro. A mensagem identifica Participante 1/2 e nome opcional, orienta trocar só a foto problemática e informa quando a análise válida do outro será reutilizada. Apenas sucessos confiáveis entram no cache em memória por `File`; falha/cancelamento não entra no cache. Duas falhas exibem ambos os motivos, sem resultado parcial ou vencedor. A câmera, a troca e a remoção individuais permanecem iguais.
+
+**Use distância e lente semelhantes, câmera centralizada, rosto relaxado e luz difusa**. O gate reduz erros conhecidos, não garante comparabilidade de toda foto aceita. Qualidade acima do mínimo nunca rende pontos.
 
 ## Testes e proveniência
 
 - `tests/fixtures/calibration-images.ts`: geração determinística em memória; não contém imagens de pessoas.
 - `tests/calibration.test.ts`: monotonicidade de contraste irregular, exposição não saturada, iluminação suave, abstenção em desfoque, pose, resposta de cada região, consistência de nota geral/PSL/Potencial e ausência de bônus de nitidez.
 - `tests/structural-calibration.test.ts`: pesos, resposta ao alvo de cada critério, variantes de mandíbula/queixo/contorno, escala/translação, falta de dados, expressão, pose, detalhe/exposição, sensibilidade da proposta 60/25/15 e empates.
+- `tests/expression-confidence.test.ts` e `tests/fixtures/expressions.ts`: regressão dos falsos positivos com pontos/ativações sintéticos de olhos estreitos, sobrancelhas altas, lábios relaxados, roll/pose leve; rejeição de piscadas/expressões fortes corroboradas, foco insuficiente e pontos ausentes. Não provam desempenho do detector em selfies humanas.
+- `tests/mogbattle.test.ts` e `tests/e2e/mogbattle.spec.ts`: atribuição de falhas aos dois participantes, ausência de vencedor, substituição de uma única foto e reutilização do sucesso, inclusive quando a primeira foto é rejeitada.
 - Testes existentes: segmentação/presença reais de MediaPipe em imagens sintéticas, lifecycle do worker, segurança de assets, confidência, ausência de uploads e persistência, layout mobile/desktop e formatação brasileira.
 - A fonte Manrope é baixada por `next/font` no build e servida localmente. Não é uma API paga nem uma conexão runtime com Google Fonts.
 - `data-calibration="3"` e `data-build` no HTML permitem verificar a versão publicada e o SHA fornecido pela Vercel, sem expor segredo ou dados de selfies.
