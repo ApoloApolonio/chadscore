@@ -21,6 +21,7 @@ async function mockLocalDetection(page: Page, result: unknown) {
   await page.addInitScript((reply) => {
     class TestWorker {
       onmessage: ((event: MessageEvent) => void) | null = null;
+      constructor() { document.documentElement.dataset.testWorkers = String(Number(document.documentElement.dataset.testWorkers || 0) + 1); }
       postMessage() { queueMicrotask(() => this.onmessage?.(new MessageEvent("message", { data: reply }))); }
       terminate() {}
     }
@@ -75,6 +76,81 @@ test("geometria local gera resultados transparentes sem envio nem armazenamento"
   await page.reload();
   await expect(page.getByRole("heading", { name: "Nenhum relatório nesta sessão" })).toBeVisible();
 });
+
+for (const viewport of [360, 1440]) for (const portrait of [true, false]) {
+  test(`visualização alinhada e sem nova inferência em ${viewport}px, ${portrait ? "retrato EXIF" : "paisagem"}`, async ({ page }) => {
+    await page.setViewportSize({ width: viewport, height: 900 });
+    const detection = syntheticDetection();
+    detection.width = portrait ? 800 : 1200;
+    detection.height = portrait ? 1200 : 800;
+    // A peripheral off-image landmark must not be clamped onto the photo border.
+    detection.faces[0][7] = { x: -0.1, y: 0.4 };
+    await mockLocalDetection(page, detection);
+    const uploads: string[] = [];
+    page.on("request", (r) => { if (r.method() !== "GET") uploads.push(r.url()); });
+    await page.goto("/");
+    // EXIF 6: encoded 1200x800 is displayed as 800x1200, as in createImageBitmap(from-image).
+    const buffer = portrait
+      ? await sharp({ create: { width: 1200, height: 800, channels: 3, background: "#405060" } }).withMetadata({ orientation: 6 }).jpeg().toBuffer()
+      : await sharp({ create: { width: 1200, height: 800, channels: 3, background: "#405060" } }).png().toBuffer();
+    await page.getByLabel("Escolher selfie", { exact: true }).setInputFiles({ name: portrait ? "oriented.jpg" : "landscape.png", mimeType: portrait ? "image/jpeg" : "image/png", buffer });
+    await page.getByRole("checkbox").check();
+    await page.getByRole("button", { name: "Analisar meu rosto" }).click();
+    await expect(page).toHaveURL(/\/resultados$/);
+    const scores = await page.locator('[data-testid$="score"], [data-testid="psl-classification"]').allTextContents();
+    const open = page.getByRole("button", { name: "Visualizar análise facial", exact: true });
+    await expect(open).toHaveAttribute("aria-expanded", "false");
+    await open.click();
+    await expect(open).toHaveAttribute("aria-expanded", "true");
+    const svg = page.getByTestId("face-overlay");
+    await expect(svg).toBeVisible();
+    await expect(svg).toHaveAttribute("viewBox", `0 0 ${detection.width} ${detection.height}`);
+    await expect(svg.locator("image")).toHaveAttribute("href", /^blob:/);
+    await expect(svg.locator('[data-landmark="7"]')).toHaveCount(0);
+    await expect(svg.locator("circle")).toHaveCount(477);
+    await expect(svg.locator("[data-region]")).toHaveCount(6);
+    const alignment = await svg.evaluate(async (element) => {
+      const root = element as unknown as SVGSVGElement;
+      const image = root.querySelector("image")!;
+      const circle = root.querySelector('[data-landmark="33"]')!;
+      const position = root.createSVGPoint();
+      position.x = Number(circle.getAttribute("cx")); position.y = Number(circle.getAttribute("cy"));
+      const projected = position.matrixTransform(root.getScreenCTM()!);
+      const bounds = image.getBoundingClientRect();
+      const photo = new Image(); photo.src = image.getAttribute("href")!; await photo.decode();
+      return { x: (projected.x - bounds.x) / bounds.width, y: (projected.y - bounds.y) / bounds.height,
+        ratio: bounds.width / bounds.height, naturalRatio: photo.naturalWidth / photo.naturalHeight };
+    });
+    expect(alignment.x).toBeCloseTo(detection.faces[0][33].x, 5);
+    expect(alignment.y).toBeCloseTo(detection.faces[0][33].y, 5);
+    expect(alignment.ratio).toBeCloseTo(detection.width / detection.height, 5);
+    expect(alignment.naturalRatio).toBeCloseTo(detection.width / detection.height, 5);
+    await page.getByRole("button", { name: "Desativar pontos", exact: true }).click();
+    await expect(page.getByTestId("landmark-layer")).toHaveCSS("opacity", "0");
+    await page.getByRole("button", { name: "Ativar pontos", exact: true }).click();
+    await expect(page.getByTestId("landmark-layer")).toHaveCSS("opacity", "1");
+    await page.getByRole("button", { name: "Nariz", exact: true }).click();
+    await expect(svg.locator("[data-region]")).toHaveCount(1);
+    await expect(svg.locator('[data-region="nose"]')).toHaveCount(1);
+    expect(await svg.locator("circle").count()).toBeLessThan(478);
+    expect(await page.locator('[data-testid$="score"], [data-testid="psl-classification"]').allTextContents()).toEqual(scores);
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await expect(page.locator("#facial-visualization")).toHaveCSS("animation-name", "none");
+    await open.click();
+    await expect(svg).toHaveCount(0);
+    await open.click();
+    await expect(svg).toBeVisible();
+    await expect(page.locator("html")).toHaveAttribute("data-test-workers", "1");
+    expect(uploads).toEqual([]);
+    expect(await page.evaluate(() => ({ local: localStorage.length, session: sessionStorage.length, overflow: document.documentElement.scrollWidth > innerWidth }))).toEqual({ local: 0, session: 0, overflow: false });
+    const photoUrl = await svg.locator("image").getAttribute("href");
+    await page.getByRole("button", { name: "Nova análise", exact: true }).click();
+    expect(await page.evaluate(async (url) => { try { await fetch(url!); return true; } catch { return false; } }, photoUrl)).toBe(false);
+    await page.goto("/resultados");
+    await expect(page.getByRole("heading", { name: "Nenhum relatório nesta sessão" })).toBeVisible();
+    await expect(page.getByTestId("face-overlay")).toHaveCount(0);
+  });
+}
 
 test("arquivo inválido não pode ser analisado", async ({ page }) => {
   await page.goto("/");

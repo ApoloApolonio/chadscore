@@ -44,11 +44,17 @@ Os URLs oficiais/versionados estão em `scripts/prepare-models.mjs`. Os assets g
 - Um worker recebe o arquivo por structured clone **dentro do navegador**, nunca por HTTP. A inferência usa CPU/WASM, não uma função serverless. Não há câmera automática, analytics ou service worker.
 - O Face Landmarker procura até dois rostos; zero/múltiplos, pontos inválidos, rosto pequeno ou enquadramento inadequado geram erro sem resultado fabricado.
 - Pele/Cabelo usam Image Segmenter e pixels locais. Máscaras, pixels e coordenadas completas não entram no relatório. Falha/insuficiência de uma região produz `—`, não uma nota de substituição.
-- A sessão contém somente relatório e URL `blob:` da miniatura em memória. Nova análise, atualização/fechamento ou descarte libera a sessão. Não há escrita de fotos em banco/disco, cookies, URLs remotas, localStorage ou sessionStorage.
+- A sessão contém relatório, URL `blob:` da selfie original e os landmarks normalizados com dimensões da imagem analisada, somente em memória. Os pontos ficam separados do relatório e são reutilizados por **Visualizar análise facial**, sem nova inferência. Nova análise, atualização/fechamento ou descarte libera a sessão e revoga a URL. Não há escrita de fotos em banco/disco, cookies, URLs remotas, localStorage ou sessionStorage.
 - O worker, bitmaps, máscaras, instâncias MediaPipe e canvases são liberados ao concluir/cancelar. O timeout local é de 60 s. Não há garantia de apagamento criptográfico imediato da memória gerenciada.
 - A CSP do worker limita scripts e conexões à origem local; os testes verificam que só há GETs locais para recursos estáticos. Apenas código, fontes, WASM e modelos podem entrar no cache normal do navegador.
 
 ## Calibração técnica v2
+
+### Visualização facial local
+
+Nos resultados, **Visualizar análise facial** abre um card com a selfie original, pontos azuis e contornos oficiais do MediaPipe para olhos, sobrancelhas, nariz, lábios, mandíbula e contorno facial. É possível selecionar uma região e ativar/desativar a sobreposição. Imagem e pontos compartilham um único `viewBox` SVG, sem recorte ou espelhamento, respeitando a orientação EXIF e a escala proporcional usada no worker. Pontos fora da imagem não são deslocados nem conectados. Animações respeitam a preferência de movimento reduzido.
+
+A topologia estática em `src/lib/face-overlay.ts` deriva do MediaPipe (Apache-2.0); não carrega outro detector. A visualização funciona mesmo quando a nota se abstém por pose e não modifica notas, PSL, Potencial ou calibração. Os pontos representam geometria da foto, não beleza objetiva.
 
 **Critérios, investigação, fórmulas e limitações completos: [docs/CALIBRATION.md](docs/CALIBRATION.md).**
 

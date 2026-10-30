@@ -44,7 +44,15 @@ export const faceAnalysisProvider: FaceAnalysisProvider = {
           }
           const detection = LandmarkResultSchema.safeParse(data);
           if (!detection.success) throw new Error("O detector retornou pontos inválidos. Tente outra foto.");
-          resolve(SuccessResponseSchema.parse({ status: "completed", report: calculateFaceReport(detection.data) }));
+          resolve(SuccessResponseSchema.parse({
+            status: "completed",
+            report: calculateFaceReport(detection.data),
+            visualization: {
+              landmarks: detection.data.faces[0],
+              width: detection.data.width,
+              height: detection.data.height,
+            },
+          }));
         } catch (error) {
           reject(error);
         }

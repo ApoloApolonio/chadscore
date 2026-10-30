@@ -57,9 +57,18 @@ export const LandmarkResultSchema = z.object({
   appearance: z.unknown().optional(),
 });
 
+export const FaceVisualizationSchema = z.strictObject({
+  landmarks: z.array(z.object({ x: z.number().finite(), y: z.number().finite() })).min(468).max(478),
+  width: z.number().int().positive().max(1280),
+  height: z.number().int().positive().max(1280),
+});
+
+export type FaceVisualization = z.infer<typeof FaceVisualizationSchema>;
+
 export const SuccessResponseSchema = z.strictObject({
   status: z.literal("completed"),
   report: ReportSchema,
+  visualization: FaceVisualizationSchema,
 });
 
 export type FaceReport = z.infer<typeof ReportSchema>;

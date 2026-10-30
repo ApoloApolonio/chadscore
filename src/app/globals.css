@@ -72,6 +72,20 @@ button, input, summary { font-family: inherit; }
   outline-offset: 4px;
 }
 
+.facial-panel { animation: facial-reveal 220ms ease-out; }
+.facial-landmarks {
+  opacity: 1;
+  filter: drop-shadow(0 0 2px rgb(67 148 255 / 45%));
+  transition: opacity 180ms ease;
+}
+.facial-landmarks--hidden { opacity: 0; }
+@keyframes facial-reveal {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .facial-panel { animation: none; }
+  .facial-landmarks { transition: none; }
   .glass-card { transition: none; }
 }

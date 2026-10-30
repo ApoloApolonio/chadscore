@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
+import { FaceVisualizationPanel } from "./face-visualization";
 import { useRouter } from "next/navigation";
 import { classifyPotential, classifyPSL, formatScore } from "@/lib/score-classification";
 import { useAnalysisSession } from "./analysis-session";
@@ -15,7 +17,8 @@ const regions = [
 const focus = "blue-focus";
 
 export function AnalysisResults() {
-  const { report, photoUrl, clearAnalysis } = useAnalysisSession();
+  const { report, photoUrl, visualization, clearAnalysis } = useAnalysisSession();
+  const [showVisualization, setShowVisualization] = useState(false);
   const router = useRouter();
 
   function startAgain() {
@@ -51,6 +54,15 @@ export function AnalysisResults() {
               <h1 className="mt-2 text-2xl font-medium tracking-tight sm:text-3xl">Seu resultado</h1>
             </div>
           </div>
+
+          {photoUrl && visualization && (
+            <div className="mt-7">
+              <button type="button" aria-expanded={showVisualization} aria-controls="facial-visualization" onClick={() => setShowVisualization(!showVisualization)} className="primary-button blue-focus cursor-pointer rounded-xl px-5 py-3 text-xs font-medium">
+                Visualizar análise facial
+              </button>
+              {showVisualization && <FaceVisualizationPanel photoUrl={photoUrl} data={visualization} />}
+            </div>
+          )}
 
           <dl className="mt-9 grid grid-cols-2 gap-3 sm:mt-10 sm:grid-cols-3 sm:gap-4">
             <div className="glass-card p-5 sm:p-6">

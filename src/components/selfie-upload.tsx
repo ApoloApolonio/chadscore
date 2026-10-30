@@ -88,7 +88,7 @@ export function SelfieUpload() {
     try {
       const result = await faceAnalysisProvider.analyze(selection.file, consent, controller.signal);
       if (currentOperation === operation.current) {
-        completeAnalysis(result.report, selection.file);
+        completeAnalysis(result.report, selection.file, result.visualization);
         setSelection(null);
         setConsent(false);
         router.push("/resultados");
